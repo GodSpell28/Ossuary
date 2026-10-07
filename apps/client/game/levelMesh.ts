@@ -7,7 +7,7 @@ import type { WorldMaterials } from './materials';
 // per-vertex attribute, averaged at tile corners so neighbouring sectors blend
 // into gradients.
 
-type RGB = [number, number, number];
+export type RGB = [number, number, number];
 
 function hexToRgb(hex: string): RGB {
   const v = parseInt(hex.slice(1), 16);
@@ -41,7 +41,13 @@ class Batch {
   }
 }
 
-export function buildLevelMesh(level: Level, materials: WorldMaterials): THREE.Group {
+/** Light colour at any point on the map, interpolated between tile corners. 0.5 is neutral. */
+export interface LightSampler {
+  floorAt(x: number, y: number): RGB;
+  ceilAt(x: number, y: number): RGB;
+}
+
+export function buildLevelMesh(level: Level, materials: WorldMaterials): { group: THREE.Group; light: LightSampler } {
   const { w, h } = level;
   const toTiles = (fixed: number) => fixed / 65536;
   const sectorLights = level.sectors.map((s) => ({
@@ -187,5 +193,93 @@ export function buildLevelMesh(level: Level, materials: WorldMaterials): THREE.G
 
   const group = new THREE.Group();
   batches.forEach((b, tex) => group.add(new THREE.Mesh(b.build(), materials.get(tex))));
-  return group;
+
+  const sample = (grid: RGB[], x: number, y: number): RGB => {
+    const cx = Math.max(0, Math.min(w - 1e-6, x));
+    const cy = Math.max(0, Math.min(h - 1e-6, y));
+    const ix = Math.floor(cx);
+    const iy = Math.floor(cy);
+    const tx = cx - ix;
+    const ty = cy - iy;
+    const a = grid[iy * cw + ix];
+    const b = grid[iy * cw + ix + 1];
+    const c = grid[(iy + 1) * cw + ix];
+    const d = grid[(iy + 1) * cw + ix + 1];
+    const out: RGB = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      const top = a[k] + (b[k] - a[k]) * tx;
+      const bot = c[k] + (d[k] - c[k]) * tx;
+      out[k] = top + (bot - top) * ty;
+    }
+    return out;
+  };
+  return {
+    group,
+    light: {
+      floorAt: (x, y) => sample(floorCorner, x, y),
+      ceilAt: (x, y) => sample(ceilCorner, x, y),
+    },
+  };
+}
+
+/** Moving door slabs, one mesh per door, raised by setting position.y. */
+export function buildDoorMeshes(level: Level, materials: WorldMaterials, light: LightSampler): THREE.Mesh[] {
+  return level.doors.map((door) => {
+    const b = new Batch();
+    const height = door.height / 65536;
+    const mine = new Set(door.tiles);
+    for (const t of door.tiles) {
+      const x = t % level.w;
+      const y = Math.floor(t / level.w);
+      const lo = light.floorAt(x + 0.5, y + 0.5);
+      const hi = light.ceilAt(x + 0.5, y + 0.5);
+      // Same side table as the walls, but faces point out of the door tile.
+      const faces: [number, number, [number, number], [number, number]][] = [
+        [1, 0, [1, 1], [1, 0]],
+        [-1, 0, [0, 0], [0, 1]],
+        [0, 1, [0, 1], [1, 1]],
+        [0, -1, [1, 0], [0, 0]],
+      ];
+      for (const [dx, dy, c1, c2] of faces) {
+        const n = tileIndex(level, x + dx, y + dy);
+        if (n < 0 || level.solid[n] || mine.has(n)) continue;
+        // The slab spans the whole door group, so u runs across it.
+        const along = dx === 0 ? x : y;
+        b.quad(
+          [
+            [x + c1[0], 0, y + c1[1]],
+            [x + c2[0], 0, y + c2[1]],
+            [x + c2[0], height, y + c2[1]],
+            [x + c1[0], height, y + c1[1]],
+          ],
+          [
+            [along, 0],
+            [along + 1, 0],
+            [along + 1, 1],
+            [along, 1],
+          ],
+          [lo, lo, hi, hi],
+        );
+      }
+      // Underside, seen while the door rises.
+      b.quad(
+        [
+          [x, 0, y],
+          [x + 1, 0, y],
+          [x + 1, 0, y + 1],
+          [x, 0, y + 1],
+        ],
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ],
+        [lo, lo, lo, lo],
+      );
+    }
+    const mesh = new THREE.Mesh(b.build(), materials.get(door.tex));
+    mesh.position.y = level.floor[door.tiles[0]] / 65536;
+    return mesh;
+  });
 }

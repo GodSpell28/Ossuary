@@ -113,11 +113,15 @@ describe('simulation', () => {
     }
   });
 
-  it('walks east out of the atrium into the duct', () => {
+  it('opens the atrium door and walks into the duct', () => {
     const s = createSim(level, 1);
-    // Spawn is (3,2) facing east; the duct starts at x=9 on rows 3-4.
+    // Spawn is (3,2) facing east; the door is x=9 on rows 3-4, the duct beyond.
     for (let i = 0; i < 20; i++) step(s, level, { forward: 0, strafe: 1, turn: 0, buttons: 0 });
-    for (let i = 0; i < 180; i++) step(s, level, { forward: 1, strafe: 0, turn: 0, buttons: 0 });
+    for (let i = 0; i < 120; i++) step(s, level, { forward: 1, strafe: 0, turn: 0, buttons: 0 });
+    expect(s.player.x >> 16).toBe(8);
+    step(s, level, { forward: 0, strafe: 0, turn: 0, buttons: 2 });
+    for (let i = 0; i < 40; i++) step(s, level, { forward: 0, strafe: 0, turn: 0, buttons: 0 });
+    for (let i = 0; i < 120; i++) step(s, level, { forward: 1, strafe: 0, turn: 0, buttons: 0 });
     expect(s.player.x >> 16).toBeGreaterThanOrEqual(10);
   });
 });

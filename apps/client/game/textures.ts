@@ -18,7 +18,7 @@ export const PALETTE: number[] = [
 
 const quantCache = new Map<number, number>();
 
-function quantise(r: number, g: number, b: number): number {
+export function quantise(r: number, g: number, b: number): number {
   r = clamp255(r);
   g = clamp255(g);
   b = clamp255(b);
@@ -212,7 +212,49 @@ function slime(): ImageData {
   });
 }
 
+function door(band: RGB | null): () => ImageData {
+  return () => {
+    const n = grain(81);
+    return paint((x, y) => {
+      const g = n(x, y) * 14;
+      // Frame
+      if (x < 3 || x > 60) return [36 + g, 34 + g, 40 + g];
+      if (x === 3 || x === 60) return [110, 112, 120];
+      // Horizontal ribs
+      if (y % 16 === 0) return [24, 22, 26];
+      if (y % 16 === 1) return [120 + g, 118 + g, 124 + g];
+      if (band && y >= 26 && y < 38) {
+        if (y === 26 || y === 37) return [30, 10, 8];
+        return [band[0] + g, band[1] + g, band[2] + g];
+      }
+      // Hazard chevrons along the bottom
+      if (y > 52) return ((x + y) >> 2) & 1 ? [200, 160, 60] : [30, 26, 22];
+      return [78 + g, 80 + g, 90 + g];
+    });
+  };
+}
+
+function exitSigil(): ImageData {
+  const n = grain(91);
+  return paint((x, y) => {
+    const dx = x - 31.5;
+    const dy = y - 31.5;
+    const d = Math.hypot(dx, dy);
+    const a = Math.atan2(dy, dx);
+    const ring = Math.abs(d - 24) < 1.6 || Math.abs(d - 18) < 1;
+    const spoke = d < 18 && Math.abs(Math.sin(a * 2.5)) < 0.12;
+    const g = n(x, y) * 16;
+    if (ring || spoke) return [230, 196, 100];
+    if (d < 26) return [70 + g, 30 + g, 20 + g];
+    return [40 + g, 34 + g, 30 + g];
+  });
+}
+
 export const TEXTURE_PAINTERS: Record<string, () => ImageData> = {
+  door: door(null),
+  door_red: door([180, 40, 28]),
+  door_blue: door([60, 90, 160]),
+  exit: exitSigil,
   brick,
   metal,
   tech,

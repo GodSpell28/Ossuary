@@ -11,33 +11,55 @@ import {
   createSim,
   hashSim,
   hex32,
+  isOver,
   parseLevel,
   provingGrounds,
   step,
   type Level,
+  type SimEvent,
   type SimState,
+  type TickInput,
 } from '@ossuary/sim';
+import { EntityRenderer, WeaponView } from './entities';
 import { InputCollector } from './input';
-import { buildLevelMesh } from './levelMesh';
+import { buildDoorMeshes, buildLevelMesh, type LightSampler } from './levelMesh';
 import { LowResPipeline } from './lowres';
 import { createWorldMaterials, type WorldMaterials } from './materials';
 
 // Owns the renderer and the fixed-step loop. The sim advances in whole 60 Hz
 // ticks; rendering interpolates between the last two states. This class knows
-// nothing about wallets: chain work will subscribe to events it emits.
+// nothing about wallets: chain work subscribes to the events it emits.
 
 const TICK_MS = 1000 / TICK_RATE;
 const MAX_FRAME_MS = 250;
 
 export interface EngineStats {
-  locked: boolean;
   fps: number;
   tick: number;
   tile: [number, number];
   hash: string;
-  /** Milliseconds spent in sim and render last frame. */
   simMs: number;
   renderMs: number;
+}
+
+export interface HudState {
+  locked: boolean;
+  hp: number;
+  armor: number;
+  ammo: number;
+  keys: number;
+  kills: number;
+  totalMobs: number;
+  /** 'playing', or how the run ended. */
+  phase: 'playing' | 'dead' | 'escaped';
+  /** Run time in ms (from ticks, not the wall clock). */
+  timeMs: number;
+}
+
+export interface EngineCallbacks {
+  onStats(s: EngineStats): void;
+  onHud(h: HudState): void;
+  onEvent(e: SimEvent, s: SimState): void;
 }
 
 export class Engine {
@@ -48,26 +70,32 @@ export class Engine {
   private materials: WorldMaterials;
   private input: InputCollector;
   private level: Level;
-  private sim: SimState;
-  private prev: SimState;
+  private light: LightSampler;
+  private doorMeshes: THREE.Mesh[];
+  private entities: EntityRenderer;
+  private weapon: WeaponView;
+  private sim!: SimState;
+  private prev!: SimState;
   private log = new InputLog();
   private accumulator = 0;
   private lastTime = 0;
   private raf = 0;
   private viewZ = 0;
   private bobPhase = 0;
+  private bobAmount = 0;
   private frames = 0;
   private fpsTime = 0;
   private fps = 0;
   private statsTime = 0;
   private simMs = 0;
   private renderMs = 0;
+  private lastHud = '';
   private resizeObserver: ResizeObserver;
 
   constructor(
     private readonly container: HTMLElement,
-    private readonly onStats: (s: EngineStats) => void,
-    seed: number,
+    private readonly cb: EngineCallbacks,
+    private seed: number,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
@@ -80,13 +108,18 @@ export class Engine {
     container.appendChild(canvas);
 
     this.level = parseLevel(provingGrounds);
-    this.sim = createSim(this.level, seed);
-    this.prev = cloneSim(this.sim);
-    this.viewZ = this.sim.player.z + VIEW_HEIGHT;
-
     this.materials = createWorldMaterials();
-    this.scene.add(buildLevelMesh(this.level, this.materials));
+    const world = buildLevelMesh(this.level, this.materials);
+    this.light = world.light;
+    this.scene.add(world.group);
+    this.doorMeshes = buildDoorMeshes(this.level, this.materials, this.light);
+    this.doorMeshes.forEach((m) => this.scene.add(m));
+    this.entities = new EntityRenderer(this.light);
+    this.scene.add(this.entities.group);
+    this.weapon = new WeaponView(this.entities.pistolFrames, this.light);
     this.input = new InputCollector(canvas);
+
+    this.restart(seed);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -103,6 +136,18 @@ export class Engine {
     this.raf = requestAnimationFrame(frame);
   }
 
+  /** Starts a fresh run on the same level. */
+  restart(seed = this.seed): void {
+    this.seed = seed;
+    this.sim = createSim(this.level, seed);
+    this.prev = cloneSim(this.sim);
+    this.log = new InputLog();
+    this.viewZ = this.sim.player.z + VIEW_HEIGHT;
+    this.accumulator = 0;
+    this.entities.reset(this.sim);
+    this.lastHud = '';
+  }
+
   requestLock(): void {
     this.input.requestLock();
   }
@@ -112,17 +157,40 @@ export class Engine {
     this.resizeObserver.disconnect();
     this.input.dispose();
     this.scene.traverse((o) => {
-      if (o instanceof THREE.Mesh) o.geometry.dispose();
+      if (o instanceof THREE.Mesh && o.geometry) o.geometry.dispose();
     });
+    this.entities.dispose();
+    this.weapon.dispose();
     this.materials.dispose();
     this.pipeline.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
 
+  /**
+   * Dev only: advances the sim synchronously with a fixed input, recording it
+   * like real play. Lets automated tests drive the game without relying on
+   * requestAnimationFrame, which browsers throttle in hidden tabs.
+   */
+  debugRun(input: Partial<TickInput>, ticks: number): SimState {
+    const inp: TickInput = { forward: 0, strafe: 0, turn: 0, buttons: 0, ...input };
+    for (let i = 0; i < ticks; i++) {
+      this.prev = cloneSim(this.sim);
+      if (!isOver(this.sim)) this.log.push(inp);
+      step(this.sim, this.level, inp);
+      for (const e of this.sim.events) this.cb.onEvent(e, this.sim);
+    }
+    this.prev = cloneSim(this.sim);
+    return this.sim;
+  }
+
   /** Every input recorded this run, for the verifier. */
   inputLog(): Int32Array {
     return this.log.toArray();
+  }
+
+  get state(): SimState {
+    return this.sim;
   }
 
   private resize(): void {
@@ -132,6 +200,7 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.pipeline.setAspect(w / h);
+    this.weapon.setViewport(this.pipeline.width, this.pipeline.height);
   }
 
   private frame(now: number): void {
@@ -139,29 +208,46 @@ export class Engine {
     this.lastTime = now;
 
     const t0 = performance.now();
-    // Only advance the sim while the player is in control.
-    if (this.input.locked) {
+    // The sim only advances while the player has control. After death or the
+    // exit it keeps ticking so corpses fall and doors close, but input stops
+    // being recorded.
+    if (this.input.locked || isOver(this.sim)) {
       this.accumulator += dt;
       while (this.accumulator >= TICK_MS) {
+        const over = isOver(this.sim);
         const inp = this.input.sample();
         this.prev = cloneSim(this.sim);
-        this.log.push(inp);
+        if (!over) this.log.push(inp);
         step(this.sim, this.level, inp);
+        for (const e of this.sim.events) this.cb.onEvent(e, this.sim);
         this.accumulator -= TICK_MS;
       }
     } else {
+      this.input.sample();
       this.accumulator = 0;
       this.prev = cloneSim(this.sim);
     }
-
     const t1 = performance.now();
+
     const alpha = this.accumulator / TICK_MS;
-    this.placeCamera(alpha, dt / 1000);
+    const dtSec = dt / 1000;
+    this.placeCamera(alpha, dtSec);
+    this.doorMeshes.forEach((m, i) => {
+      const a = this.prev.doors[i].open;
+      const b = this.sim.doors[i].open;
+      m.position.y = (this.level.floor[this.level.doors[i].tiles[0]] + a + (b - a) * alpha) / ONE;
+    });
+    this.entities.update(this.prev, this.sim, alpha, this.camera.rotation.y);
+    this.weapon.update(this.sim, this.bobPhase, this.bobAmount, dtSec);
     this.materials.setTime(now / 1000);
-    this.pipeline.render(this.renderer, [[this.scene, this.camera]]);
+    this.pipeline.render(this.renderer, [
+      [this.scene, this.camera],
+      [this.weapon.scene, this.weapon.camera],
+    ]);
     this.simMs = t1 - t0;
     this.renderMs = performance.now() - t1;
 
+    this.emitHud();
     this.frames++;
     if (now - this.fpsTime >= 1000) {
       this.fps = Math.round((this.frames * 1000) / (now - this.fpsTime));
@@ -171,8 +257,7 @@ export class Engine {
     if (now - this.statsTime >= 250) {
       this.statsTime = now;
       const p = this.sim.player;
-      this.onStats({
-        locked: this.input.locked,
+      this.cb.onStats({
         fps: this.fps,
         tick: this.sim.tick,
         tile: [p.x >> 16, p.y >> 16],
@@ -180,6 +265,29 @@ export class Engine {
         simMs: this.simMs,
         renderMs: this.renderMs,
       });
+    }
+  }
+
+  private emitHud(): void {
+    const s = this.sim;
+    const p = s.player;
+    const end = p.diedAt >= 0 ? p.diedAt : s.finishedAt >= 0 ? s.finishedAt : s.tick;
+    const hud: HudState = {
+      locked: this.input.locked,
+      hp: p.hp,
+      armor: p.armor,
+      ammo: p.ammo,
+      keys: p.keys,
+      kills: p.kills,
+      totalMobs: s.mobs.length,
+      phase: p.diedAt >= 0 ? 'dead' : s.finishedAt >= 0 ? 'escaped' : 'playing',
+      timeMs: Math.floor((end * 1000) / TICK_RATE),
+    };
+    // Only re-render React when something visible changed (time in whole seconds).
+    const key = JSON.stringify({ ...hud, timeMs: Math.floor(hud.timeMs / 1000) });
+    if (key !== this.lastHud) {
+      this.lastHud = key;
+      this.cb.onHud(hud);
     }
   }
 
@@ -194,18 +302,21 @@ export class Engine {
     if (da < -ANG180) da += ANGLES;
     const angle = a.angle + da * alpha;
 
-    // Step up smoothly, fall with the sim's gravity.
-    const target = b.z + VIEW_HEIGHT;
+    // Step up smoothly, fall with the sim's gravity; sink to the floor on death.
+    const deadFor = b.diedAt >= 0 ? Math.min(1, (this.sim.tick - b.diedAt) / 40) : 0;
+    const target = b.z + VIEW_HEIGHT * (1 - deadFor * 0.75);
     if (target < this.viewZ) this.viewZ = target;
     else this.viewZ += (target - this.viewZ) * Math.min(1, dtSec * 14);
 
     const speed = Math.hypot(b.vx, b.vy) / ONE;
-    this.bobPhase += dtSec * 11 * Math.min(1, speed * 12);
-    const bob = Math.sin(this.bobPhase) * 0.025 * Math.min(1, speed * 12);
+    this.bobAmount = Math.min(1, speed * 12);
+    this.bobPhase += dtSec * 11 * this.bobAmount;
+    const bob = Math.sin(this.bobPhase * 2) * 0.02 * this.bobAmount;
 
     this.camera.position.set(x, this.viewZ / ONE + bob, y);
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = -angleToRadians(angle) - Math.PI / 2;
     this.camera.rotation.x = this.input.pitch;
+    this.camera.rotation.z = deadFor * 0.5;
   }
 }
