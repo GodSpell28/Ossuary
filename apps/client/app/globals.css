@@ -1,0 +1,11 @@
+:root {
+  --bg: #07060a;
+  --fg: #e8dcc8;
+  --dim: #8a7f70;
+  --blood: #b8321e;
+  --bone: #d9c9a8;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
+body { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+a { color: var(--bone); }

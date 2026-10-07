@@ -1,0 +1,11 @@
+{
+  "name": "ossuary",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm --filter @ossuary/client dev",
+    "build": "pnpm --filter @ossuary/client build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}
