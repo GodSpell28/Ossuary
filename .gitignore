@@ -11,3 +11,6 @@ packages/contracts/out/
 packages/contracts/cache/
 packages/contracts/broadcast/*/31337/
 *.tsbuildinfo
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/types/
