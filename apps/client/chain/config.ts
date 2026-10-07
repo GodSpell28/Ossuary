@@ -19,4 +19,13 @@ export const publicClient = createPublicClient({ chain: CHAIN, transport: http()
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`;
 export const addressUrl = (a: string) => `${EXPLORER}/address/${a}`;
 
-export const VERIFIER_URL = process.env.NEXT_PUBLIC_VERIFIER_URL || 'http://localhost:8787';
+/**
+ * The verifier's base URL. A value pasted without a scheme would otherwise be
+ * fetched as a path on this site, so default to https and drop a trailing slash.
+ */
+export const VERIFIER_URL = normaliseUrl(process.env.NEXT_PUBLIC_VERIFIER_URL || 'http://localhost:8787');
+
+function normaliseUrl(raw: string): string {
+  const url = raw.trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
