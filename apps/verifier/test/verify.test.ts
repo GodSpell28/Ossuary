@@ -1,4 +1,4 @@
-import { STAND_AND_DIE, inputsToBase64, levelForDay, playScript, replay, tileIndex } from '@ossuary/sim';
+import { SIM_FINGERPRINT, STAND_AND_DIE, inputsToBase64, levelForDay, playScript, replay, tileIndex } from '@ossuary/sim';
 import { hexToString, recoverTypedDataAddress, type Address } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
@@ -60,7 +60,7 @@ describe('verifyDeath', () => {
   it('refuses a log that does not end in death', async () => {
     const inputs = deathLog().inputs.slice(0, 200);
     await expect(verifyDeath(deps(), { runId: '2', player, inputs: inputsToBase64(inputs) })).rejects.toThrow(
-      /does not end in a death/,
+      /does not reach a death/,
     );
   });
 
@@ -76,7 +76,7 @@ describe('verifyDeath', () => {
     const level = levelForDay(DAY);
     const other = [1, 2, 3, 4, 5].map((k) => DAY + k).find((d) => replay(level, d, inputs).outcome !== 'death')!;
     const body = { runId: '2', player, inputs: inputsToBase64(inputs) };
-    await expect(verifyDeath(deps({ day: other }), body)).rejects.toThrow(/does not end in a death/);
+    await expect(verifyDeath(deps({ day: other }), body)).rejects.toThrow(/does not reach a death/);
   });
 });
 
@@ -92,7 +92,23 @@ describe('relics', () => {
     expect(ok.tile).toBe(withPlate.tile);
     await expect(
       verifyDeath(deps({}, [6]), { runId: '2', player, inputs: inputsToBase64(withPlate.inputs), relicId: 0 }),
-    ).rejects.toThrow(/does not end in a death/);
+    ).rejects.toThrow(/does not reach a death/);
+  });
+});
+
+describe('rules fingerprint', () => {
+  it('tells a client running different rules to reload', async () => {
+    const body = { runId: '2', player, inputs: inputsToBase64(deathLog().inputs), sim: 'deadbeef' };
+    await expect(verifyDeath(deps(), body)).rejects.toThrow(/reload the page/);
+  });
+
+  it('accepts the matching fingerprint and explains a replay that does not match', async () => {
+    const ok = await verifyDeath(deps(), { runId: '2', player, inputs: inputsToBase64(deathLog().inputs), sim: SIM_FINGERPRINT });
+    expect(ok.tile).toBeGreaterThan(0);
+    const short = deathLog().inputs.slice(0, 300);
+    await expect(
+      verifyDeath(deps(), { runId: '2', player, inputs: inputsToBase64(short), sim: SIM_FINGERPRINT, ticks: 300 }),
+    ).rejects.toThrow(/never ended after 300 ticks \(client ran 300 ticks\)/);
   });
 });
 

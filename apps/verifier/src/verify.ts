@@ -1,4 +1,4 @@
-import { inputsFromBase64, levelForDay, replay } from '@ossuary/sim';
+import { SIM_FINGERPRINT, inputsFromBase64, levelForDay, replay } from '@ossuary/sim';
 import { isAddress, keccak256, stringToHex, toHex, type Address, type Hex, type LocalAccount } from 'viem';
 
 // Checks a claimed run outcome by replaying its input log through the same
@@ -43,7 +43,17 @@ function parseRelic(raw: unknown): number {
   return relicId;
 }
 
-async function checkRun(d: VerifyDeps, runIdRaw: unknown, playerRaw: unknown, inputsRaw: unknown, relicId: number) {
+/** Message the client shows when its rules differ from the verifier's. */
+export const OUTDATED = 'the game was updated since this page loaded; reload the page to play the current version';
+
+async function checkRun(
+  d: VerifyDeps,
+  body: Record<string, unknown>,
+  relicId: number,
+) {
+  const { runId: runIdRaw, player: playerRaw, inputs: inputsRaw } = body;
+  // Older clients send no fingerprint; a mismatched one can never replay.
+  if (body.sim !== undefined && body.sim !== SIM_FINGERPRINT) throw new VerifyError(OUTDATED, 409);
   if (typeof runIdRaw !== 'string' || !/^\d+$/.test(runIdRaw)) throw new VerifyError('runId must be a decimal string');
   if (typeof playerRaw !== 'string' || !isAddress(playerRaw)) throw new VerifyError('player must be an address');
   if (typeof inputsRaw !== 'string') throw new VerifyError('inputs must be base64');
@@ -71,6 +81,13 @@ async function checkRun(d: VerifyDeps, runIdRaw: unknown, playerRaw: unknown, in
   return { runId, player, run, result, replayHash };
 }
 
+/** Explains a replay that ended differently from the client's claim. */
+function mismatch(expected: string, r: { outcome: string; ticks: number }, body: Record<string, unknown>): string {
+  const claimed = typeof body.ticks === 'number' ? ` (client ran ${body.ticks} ticks)` : '';
+  const ended = r.outcome === 'incomplete' ? 'never ended' : `ended in a ${r.outcome}`;
+  return `replay does not reach ${expected}: it ${ended} after ${r.ticks} ticks${claimed}`;
+}
+
 /** Epitaphs are short text packed into bytes32. */
 export function packEpitaph(text: unknown): Hex {
   const t = typeof text === 'string' ? text.trim().replace(/\s+/g, ' ') : '';
@@ -81,8 +98,8 @@ export function packEpitaph(text: unknown): Hex {
 
 export async function verifyDeath(d: VerifyDeps, body: Record<string, unknown>) {
   const relicId = parseRelic(body.relicId);
-  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs, relicId);
-  if (result.outcome !== 'death') throw new VerifyError(`replay does not end in a death (${result.outcome})`, 422);
+  const { runId, player, result, replayHash } = await checkRun(d, body, relicId);
+  if (result.outcome !== 'death') throw new VerifyError(mismatch('a death', result, body), 422);
   const epitaph = packEpitaph(body.epitaph);
   const tile = result.tile;
 
@@ -105,8 +122,8 @@ export async function verifyDeath(d: VerifyDeps, body: Record<string, unknown>) 
 
 export async function verifyFinish(d: VerifyDeps, body: Record<string, unknown>) {
   const relicId = parseRelic(body.relicId);
-  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs, relicId);
-  if (result.outcome !== 'finish') throw new VerifyError(`replay does not reach the exit (${result.outcome})`, 422);
+  const { runId, player, result, replayHash } = await checkRun(d, body, relicId);
+  if (result.outcome !== 'finish') throw new VerifyError(mismatch('the exit', result, body), 422);
   const { timeMs, kills } = result;
 
   const signature = await d.signer.signTypedData({

@@ -7,6 +7,7 @@ import { cors } from 'hono/cors';
 import { createPublicClient, http, parseAbi, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalanche, avalancheFuji } from 'viem/chains';
+import { SIM_FINGERPRINT } from '@ossuary/sim';
 import { VerifyError, verifyDeath, verifyFinish, type VerifyDeps } from './verify';
 
 // Replay-and-sign service. Env (falls back to the contracts package locally):
@@ -55,7 +56,7 @@ const app = new Hono();
 const origins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map((s) => s.trim());
 app.use('*', cors({ origin: origins, allowMethods: ['GET', 'POST'] }));
 
-app.get('/', (c) => c.json({ ok: true, network, verifier: deps.signer.address, game }));
+app.get('/', (c) => c.json({ ok: true, network, verifier: deps.signer.address, game, sim: SIM_FINGERPRINT }));
 
 const handle = (fn: typeof verifyDeath | typeof verifyFinish) => async (c: any) => {
   const started = Date.now();
@@ -77,5 +78,5 @@ app.post('/verify/finish', handle(verifyFinish));
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(`verifier ${deps.signer.address} for game ${game} on :${port}`);
+  console.log(`verifier ${deps.signer.address} for game ${game} on :${port}, rules ${SIM_FINGERPRINT}`);
 });

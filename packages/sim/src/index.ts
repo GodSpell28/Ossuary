@@ -9,3 +9,4 @@ export { provingGrounds } from './levels/proving';
 export { charnelDescent } from './levels/charnel';
 export * from './replay';
 export * from './scripted';
+export * from './version';

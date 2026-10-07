@@ -1,4 +1,4 @@
-import { ONE, inputsToBase64, type SimEvent } from '@ossuary/sim';
+import { ONE, SIM_FINGERPRINT, inputsToBase64, type SimEvent } from '@ossuary/sim';
 import { hexToString, type Hex } from 'viem';
 import type { Engine } from '@/game/engine';
 import type { GraveMarker } from '@/game/entities';
@@ -65,6 +65,7 @@ export class RunController {
     this.day = await this.layer.today();
     // The verifier replays with the chain's day as the seed, so match it.
     if (this.engine.state.tick === 0 && this.engine.seedValue !== this.day) this.engine.restart(this.day);
+    void this.checkVerifierVersion();
     await this.refreshGraves();
     this.timers.push(setInterval(() => void this.refreshGraves(), GRAVE_POLL_MS));
     this.timers.push(setInterval(() => this.checkGraves(), 150));
@@ -170,15 +171,48 @@ export class RunController {
     }
   }
 
-  private async verify(kind: 'death' | 'finish', body: object): Promise<any> {
-    const res = await fetch(`${VERIFIER_URL}/verify/${kind}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(`verifier: ${json.error ?? res.status}`);
-    return json;
+  /**
+   * Warns before play if this page runs different game rules from the
+   * verifier (an old tab across a deploy). Such a run could never verify.
+   */
+  private async checkVerifierVersion(): Promise<void> {
+    try {
+      const res = await fetch(`${VERIFIER_URL}/`);
+      const info = (await res.json()) as { sim?: string };
+      if (info.sim && info.sim !== SIM_FINGERPRINT) {
+        this.ui.message('The game was updated. Reload the page (Ctrl+Shift+R) before playing, or your result cannot be recorded.');
+      }
+    } catch {
+      this.ui.message('The verifier is unreachable right now; deaths and escapes may not be recorded.');
+    }
+  }
+
+  /**
+   * Posts a run to the verifier. Network failures and server errors are
+   * retried; a refusal (4xx) is final and its reason is shown.
+   */
+  private async verify(kind: 'death' | 'finish', body: { inputs: string } & Record<string, unknown>): Promise<any> {
+    // Ticks from the captured log itself: the engine may already be on a new run.
+    const ticks = Math.floor((body.inputs.replace(/=+$/, '').length * 3) / 16);
+    const payload = JSON.stringify({ ...body, sim: SIM_FINGERPRINT, ticks });
+    let last: unknown;
+    for (const wait of [0, 1500, 4000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      try {
+        const res = await fetch(`${VERIFIER_URL}/verify/${kind}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: payload,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) return json;
+        last = new Error(`verifier: ${json.error ?? res.status}`);
+        if (res.status < 500) break;
+      } catch (e) {
+        last = e;
+      }
+    }
+    throw last;
   }
 
   private async refreshGraves(): Promise<void> {
