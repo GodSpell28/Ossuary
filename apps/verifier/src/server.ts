@@ -6,13 +6,14 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createPublicClient, http, parseAbi, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { avalancheFuji } from 'viem/chains';
+import { avalanche, avalancheFuji } from 'viem/chains';
 import { VerifyError, verifyDeath, verifyFinish, type VerifyDeps } from './verify';
 
 // Replay-and-sign service. Env (falls back to the contracts package locally):
 //   VERIFIER_PRIVATE_KEY  key whose address OssuaryGame trusts
 //   GAME_ADDRESS          OssuaryGame on Fuji
-//   FUJI_RPC_URL          optional RPC override
+//   NETWORK               'fuji' (default) or 'mainnet'
+//   RPC_URL               optional RPC override (FUJI_RPC_URL also read)
 //   ALLOWED_ORIGINS       comma list, default http://localhost:3000
 //   PORT                  default 8787
 
@@ -22,19 +23,24 @@ config({ path: here('../../../packages/contracts/.env') });
 
 const key = process.env.VERIFIER_PRIVATE_KEY as Hex | undefined;
 if (!key) throw new Error('VERIFIER_PRIVATE_KEY is not set');
-const deployments = here('../../../packages/contracts/deployments/fuji.json');
+const network = process.env.NETWORK === 'mainnet' ? 'avalanche' : 'fuji';
+const chain = network === 'avalanche' ? avalanche : avalancheFuji;
+const deployments = here(`../../../packages/contracts/deployments/${network}.json`);
 const deployed = existsSync(deployments) ? JSON.parse(readFileSync(deployments, 'utf8')) : {};
 const game = (process.env.GAME_ADDRESS ?? deployed.game) as Address | undefined;
 const relics = (process.env.RELICS_ADDRESS ?? deployed.relics) as Address | undefined;
-if (!game || !relics) throw new Error('GAME_ADDRESS / RELICS_ADDRESS not set and no deployments/fuji.json found');
+if (!game || !relics) throw new Error(`GAME_ADDRESS / RELICS_ADDRESS not set and no deployments/${network}.json found`);
 
-const client = createPublicClient({ chain: avalancheFuji, transport: http(process.env.FUJI_RPC_URL) });
+const client = createPublicClient({
+  chain,
+  transport: http(process.env.RPC_URL ?? (network === 'fuji' ? process.env.FUJI_RPC_URL : undefined)),
+});
 const runsAbi = parseAbi(['function runs(uint256) view returns (address player, uint32 day, uint64 startedAt, bool open)']);
 const relicsAbi = parseAbi(['function balanceOf(address account, uint256 id) view returns (uint256)']);
 
 const deps: VerifyDeps = {
   signer: privateKeyToAccount(key),
-  chainId: avalancheFuji.id,
+  chainId: chain.id,
   game,
   async readRun(runId) {
     const [player, day, , open] = await client.readContract({ address: game, abi: runsAbi, functionName: 'runs', args: [runId] });
@@ -49,7 +55,7 @@ const app = new Hono();
 const origins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map((s) => s.trim());
 app.use('*', cors({ origin: origins, allowMethods: ['GET', 'POST'] }));
 
-app.get('/', (c) => c.json({ ok: true, verifier: deps.signer.address, game }));
+app.get('/', (c) => c.json({ ok: true, network, verifier: deps.signer.address, game }));
 
 const handle = (fn: typeof verifyDeath | typeof verifyFinish) => async (c: any) => {
   const started = Date.now();

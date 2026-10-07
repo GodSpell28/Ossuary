@@ -1,0 +1,22 @@
+# Replay-and-sign verifier. Build from the repo root:
+#   docker build -f Dockerfile.verifier -t ossuary-verifier .
+#   docker run -p 8787:8787 -e VERIFIER_PRIVATE_KEY=0x... -e ALLOWED_ORIGINS=https://your.app ossuary-verifier
+FROM node:22-slim
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+# Every workspace manifest, so the lockfile matches; only the verifier's deps are installed.
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
+COPY packages/sim/package.json packages/sim/
+COPY packages/contracts/package.json packages/contracts/
+COPY apps/client/package.json apps/client/
+COPY apps/verifier/package.json apps/verifier/
+RUN pnpm install --frozen-lockfile --filter "@ossuary/verifier..."
+
+COPY packages/sim packages/sim
+COPY apps/verifier apps/verifier
+COPY packages/contracts/deployments packages/contracts/deployments
+
+ENV NODE_ENV=production PORT=8787
+EXPOSE 8787
+CMD ["pnpm", "--filter", "@ossuary/verifier", "start"]

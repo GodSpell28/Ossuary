@@ -8,7 +8,10 @@
     "test": "hardhat test",
     "export-abi": "hardhat build && node scripts/export-abi.ts",
     "deploy:fuji": "hardhat run scripts/deploy.ts --network fuji",
-    "balance:fuji": "hardhat run scripts/balance.ts --network fuji"
+    "balance:fuji": "hardhat run scripts/balance.ts --network fuji",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network avalanche",
+    "balance:mainnet": "hardhat run scripts/balance.ts --network avalanche",
+    "verify:fuji": "hardhat verify sourcify --network fuji"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",

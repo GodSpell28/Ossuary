@@ -1,6 +1,7 @@
 // Deploys Relics and OssuaryGame, links them, and writes the addresses to
 // deployments/<network>.json and the client's env file.
 //   pnpm exec hardhat run scripts/deploy.ts --network fuji
+//   pnpm exec hardhat run scripts/deploy.ts --network avalanche   (mainnet)
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { network } from 'hardhat';
 import { formatEther } from 'viem';
@@ -33,9 +34,14 @@ const out = { chainId, relics: relics.address, game: game.address, verifier, dep
 mkdirSync('deployments', { recursive: true });
 writeFileSync(`deployments/${conn.networkName}.json`, JSON.stringify(out, null, 2) + '\n');
 
-// Point the client at the new contracts.
+// Point the local client at new Fuji contracts. For mainnet, print the values
+// to put into the hosting provider's environment instead.
 const envPath = '../../apps/client/.env.local';
-if (existsSync(envPath)) {
+if (conn.networkName !== 'fuji') {
+  console.log('\nSet these in the client environment:');
+  console.log(`NEXT_PUBLIC_NETWORK=mainnet\nNEXT_PUBLIC_GAME_ADDRESS=${game.address}\nNEXT_PUBLIC_RELICS_ADDRESS=${relics.address}\nNEXT_PUBLIC_DEPLOY_BLOCK=${block}`);
+  console.log('and in the verifier environment: NETWORK=mainnet (it reads deployments/avalanche.json)');
+} else if (existsSync(envPath)) {
   let env = readFileSync(envPath, 'utf8');
   const set = (k: string, v: string) => {
     env = env.match(new RegExp(`^${k}=`, 'm')) ? env.replace(new RegExp(`^${k}=.*$`, 'm'), `${k}=${v}`) : env + `${k}=${v}\n`;

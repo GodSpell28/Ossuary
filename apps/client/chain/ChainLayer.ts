@@ -6,7 +6,7 @@ import {
 } from '@smoothsend/sdk/avax';
 import { decodeEventLog, encodeFunctionData, type Address, type Hex, type WalletClient } from 'viem';
 import { ossuaryGameAbi, relicsAbi } from './abi';
-import { GAME_ADDRESS, RELICS_ADDRESS, SMOOTHSEND_KEY, publicClient } from './config';
+import { GAME_ADDRESS, NETWORK, RELICS_ADDRESS, SMOOTHSEND_KEY, SMOOTHSEND_NETWORK, publicClient } from './config';
 
 // Turns game actions into sponsored ERC-4337 operations. The engine never
 // waits on this: it fires actions and listens for status updates.
@@ -57,12 +57,12 @@ export class ChainLayer {
   static async create(walletClient: WalletClient, owner: Address): Promise<ChainLayer> {
     if (!SMOOTHSEND_KEY) throw new Error('NEXT_PUBLIC_SMOOTHSEND_KEY is not set');
     const defaults = await fetchAvaxAaPublicDefaults();
-    const factory = defaults.simpleAccountFactoryFuji;
-    if (!factory) throw new Error('SmoothSend did not return a Fuji account factory');
+    const factory = NETWORK === 'mainnet' ? defaults.simpleAccountFactoryMainnet : defaults.simpleAccountFactoryFuji;
+    if (!factory) throw new Error(`SmoothSend did not return an account factory for ${NETWORK}`);
     const smartAccount = await predictSimpleAccountAddress({ publicClient, factory, owner, salt: 0n });
     const client = createSmoothSendAvaxClient({
       apiKey: SMOOTHSEND_KEY,
-      network: 'testnet',
+      network: SMOOTHSEND_NETWORK,
       publicClient,
       walletClient,
       ownerAddress: owner,

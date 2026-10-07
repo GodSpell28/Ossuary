@@ -1,8 +1,12 @@
 import { createPublicClient, http, type Address } from 'viem';
-import { avalancheFuji } from 'viem/chains';
+import { avalanche, avalancheFuji } from 'viem/chains';
 
-export const CHAIN = avalancheFuji;
-export const EXPLORER = 'https://testnet.snowtrace.io';
+/** 'fuji' (default) or 'mainnet'. Contract addresses must match the network. */
+export const NETWORK: 'fuji' | 'mainnet' = process.env.NEXT_PUBLIC_NETWORK === 'mainnet' ? 'mainnet' : 'fuji';
+export const CHAIN = NETWORK === 'mainnet' ? avalanche : avalancheFuji;
+export const EXPLORER = NETWORK === 'mainnet' ? 'https://snowtrace.io' : 'https://testnet.snowtrace.io';
+/** SmoothSend's name for the network. */
+export const SMOOTHSEND_NETWORK = NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
 
 export const SMOOTHSEND_KEY = process.env.NEXT_PUBLIC_SMOOTHSEND_KEY ?? '';
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '';

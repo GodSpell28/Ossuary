@@ -72,7 +72,7 @@ export interface WeaponDef {
 }
 
 export const WEAPONS: WeaponDef[] = [
-  { name: 'Pistol', ammo: 'bullets', cooldown: 16, pellets: 1, spread: 12, damageMin: 10, damageRange: 8 },
+  { name: 'Pistol', ammo: 'bullets', cooldown: 14, pellets: 1, spread: 12, damageMin: 10, damageRange: 8 },
   { name: 'Shotgun', ammo: 'shells', cooldown: 50, pellets: 7, spread: 70, damageMin: 6, damageRange: 7 },
   { name: 'Ember Lance', ammo: 'cells', cooldown: 7, pellets: 0, spread: 6, damageMin: 13, damageRange: 8, projectileSpeed: 15000 },
 ];
@@ -127,10 +127,10 @@ export const MOB_TYPES = {
     radius: units(18),
     speed: 3600,
     reach: units(52),
-    attackTicks: 26,
-    hitTick: 12,
-    damageMin: 5,
-    damageRange: 7,
+    attackTicks: 32,
+    hitTick: 14,
+    damageMin: 4,
+    damageRange: 6,
     painChance: 150,
     painTicks: 14,
   },
@@ -304,7 +304,7 @@ export function createSim(level: Level, seed: number, opts: RunOptions = {}): Si
       hp: relic === 1 ? 125 : MAX_HEALTH,
       maxHp: relic === 1 ? 125 : MAX_HEALTH,
       armor: relic === 6 ? 50 : 0,
-      bullets: 50,
+      bullets: 60,
       shells: 0,
       cells: 0,
       weapon: 0,
