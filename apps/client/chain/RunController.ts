@@ -35,7 +35,12 @@ const GRAVE_POLL_MS = 20_000;
 export interface RunControllerEvents {
   message(text: string): void;
   graves(count: number): void;
+  /** The run ended in death and an epitaph can be carved (or null once done). */
+  epitaph(defaultText: string | null): void;
 }
+
+/** Seconds to wait for a typed epitaph before carving the default. */
+const EPITAPH_WAIT_S = 25;
 
 export class RunController {
   private day: number | null = null;
@@ -47,6 +52,7 @@ export class RunController {
   private looting = new Set<bigint>();
   private shownEpitaph: bigint | null = null;
   private timers: ReturnType<typeof setInterval>[] = [];
+  private carveNow: ((text: string) => void) | null = null;
   private disposed = false;
 
   constructor(
@@ -96,15 +102,40 @@ export class RunController {
     if (e.type === 'exit') this.settled = this.recordFinish();
   }
 
+  /** Carves the epitaph the player typed (or the default) right away. */
+  carve(text: string): void {
+    this.carveNow?.(text);
+  }
+
+  private askEpitaph(fallback: string): Promise<string> {
+    this.ui.epitaph(fallback);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => done(fallback), EPITAPH_WAIT_S * 1000);
+      const done = (text: string) => {
+        clearTimeout(timer);
+        this.carveNow = null;
+        this.ui.epitaph(null);
+        resolve(text.trim().slice(0, 32) || fallback);
+      };
+      this.carveNow = done;
+    });
+  }
+
   private async recordDeath(): Promise<void> {
     const inputs = this.engine.inputLog();
+    const relicId = this.engine.relicValue;
+    const fallback = EPITAPHS[Math.floor(Math.random() * EPITAPHS.length)];
+    const typed = this.askEpitaph(fallback);
     const runId = await this.runId;
     this.runOpen = false;
-    if (runId === null || runId === undefined) return;
+    if (runId === null || runId === undefined) {
+      this.carveNow?.(fallback);
+      return;
+    }
     try {
-      const held = await this.layer.relics();
-      const relicId = held.findIndex((n) => n > 0) + 1;
-      const epitaph = EPITAPHS[Number(runId % BigInt(EPITAPHS.length))];
+      // Epitaphs are 32 bytes on-chain; trim multi-byte text until it fits.
+      let epitaph = await typed;
+      while (new TextEncoder().encode(epitaph).length > 32) epitaph = epitaph.slice(0, -1);
       const v = await this.verify('death', {
         runId: runId.toString(),
         player: this.layer.smartAccount,
@@ -130,6 +161,7 @@ export class RunController {
         runId: runId.toString(),
         player: this.layer.smartAccount,
         inputs: inputsToBase64(inputs),
+        relicId: this.engine.relicValue,
       });
       await this.layer.finishRun(runId, v.timeMs, v.kills, v.replayHash as Hex, v.signature as Hex);
       this.ui.message('Escape recorded on Fuji. A relic is yours.');

@@ -23,12 +23,14 @@ config({ path: here('../../../packages/contracts/.env') });
 const key = process.env.VERIFIER_PRIVATE_KEY as Hex | undefined;
 if (!key) throw new Error('VERIFIER_PRIVATE_KEY is not set');
 const deployments = here('../../../packages/contracts/deployments/fuji.json');
-const game = (process.env.GAME_ADDRESS ??
-  (existsSync(deployments) ? JSON.parse(readFileSync(deployments, 'utf8')).game : undefined)) as Address | undefined;
-if (!game) throw new Error('GAME_ADDRESS is not set and no deployments/fuji.json found');
+const deployed = existsSync(deployments) ? JSON.parse(readFileSync(deployments, 'utf8')) : {};
+const game = (process.env.GAME_ADDRESS ?? deployed.game) as Address | undefined;
+const relics = (process.env.RELICS_ADDRESS ?? deployed.relics) as Address | undefined;
+if (!game || !relics) throw new Error('GAME_ADDRESS / RELICS_ADDRESS not set and no deployments/fuji.json found');
 
 const client = createPublicClient({ chain: avalancheFuji, transport: http(process.env.FUJI_RPC_URL) });
 const runsAbi = parseAbi(['function runs(uint256) view returns (address player, uint32 day, uint64 startedAt, bool open)']);
+const relicsAbi = parseAbi(['function balanceOf(address account, uint256 id) view returns (uint256)']);
 
 const deps: VerifyDeps = {
   signer: privateKeyToAccount(key),
@@ -37,6 +39,9 @@ const deps: VerifyDeps = {
   async readRun(runId) {
     const [player, day, , open] = await client.readContract({ address: game, abi: runsAbi, functionName: 'runs', args: [runId] });
     return { player, day: Number(day), open };
+  },
+  readRelicBalance(player, relicId) {
+    return client.readContract({ address: relics, abi: relicsAbi, functionName: 'balanceOf', args: [player, BigInt(relicId)] });
   },
 };
 

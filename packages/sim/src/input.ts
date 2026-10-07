@@ -5,6 +5,10 @@ export const BTN_FIRE = 1;
 export const BTN_USE = 2;
 export const BTN_NEXT_WEAPON = 4;
 export const BTN_PREV_WEAPON = 8;
+/** Select weapon slot 1, 2 or 3 directly. */
+export const BTN_SLOT1 = 16;
+export const BTN_SLOT2 = 32;
+export const BTN_SLOT3 = 64;
 
 export interface TickInput {
   /** -1 back, 0, 1 forward */

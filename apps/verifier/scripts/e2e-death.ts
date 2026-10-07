@@ -4,7 +4,7 @@
 //   pnpm --filter @ossuary/verifier e2e   (verifier must be running on :8787)
 import { readFileSync } from 'node:fs';
 import { createSmoothSendAvaxClient } from '@smoothsend/sdk/avax';
-import { InputLog, createSim, inputsToBase64, isOver, levelForDay, step, type TickInput } from '@ossuary/sim';
+import { STAND_AND_DIE, inputsToBase64, levelForDay, playScript } from '@ossuary/sim';
 import { config } from 'dotenv';
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, hexToString, http, parseAbi, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
@@ -51,25 +51,17 @@ const runId = (started!.args as { runId: bigint; player: Hex }).runId;
 const player = (started!.args as { player: Hex }).player;
 console.log(`run ${runId} for smart account ${player}`);
 
-// 2. Play: through the door into the duct, then stand still until killed.
+// 2. Play: open the crypt door, walk into the bone hall and stand there until killed.
 const level = levelForDay(day);
-const s = createSim(level, day);
-const log = new InputLog();
-const script: [TickInput, number][] = [
-  [{ forward: 0, strafe: 1, turn: 0, buttons: 0 }, 21],
-  [{ forward: 1, strafe: 0, turn: 0, buttons: 0 }, 114],
-  [{ forward: 0, strafe: 0, turn: 0, buttons: 2 }, 1],
-  [{ forward: 0, strafe: 0, turn: 0, buttons: 0 }, 60 * 120],
-];
-outer: for (const [inp, n] of script) for (let i = 0; i < n; i++) { if (isOver(s)) break outer; log.push(inp); step(s, level, inp); }
-console.log(`died at tick ${s.player.diedAt}, ${log.length} inputs`);
+const { state: s, inputs } = playScript(level, day, STAND_AND_DIE);
+console.log(`died at tick ${s.player.diedAt}, ${inputs.length} inputs`);
 
 // 3. Verifier replays and signs.
 const t0 = Date.now();
 const res = await fetch('http://localhost:8787/verify/death', {
   method: 'POST',
   headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
-  body: JSON.stringify({ runId: runId.toString(), player, inputs: inputsToBase64(log.toArray()), epitaph: 'e2e test: stood in the duct', relicId: 0 }),
+  body: JSON.stringify({ runId: runId.toString(), player, inputs: inputsToBase64(inputs), epitaph: 'e2e test: stood in the duct', relicId: 0 }),
 });
 const v = await res.json();
 if (!res.ok) throw new Error(`verifier: ${v.error}`);

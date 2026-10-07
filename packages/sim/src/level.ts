@@ -10,7 +10,23 @@ import { ANGLES } from './trig';
 export type KeyColor = 'red' | 'blue';
 export const KEY_BITS: Record<KeyColor, number> = { red: 1, blue: 2 };
 
-export type ThingKind = 'rusher' | 'health' | 'armor' | 'ammo' | 'key_red' | 'key_blue';
+export type ThingKind =
+  | 'rusher'
+  | 'caster'
+  | 'heavy'
+  | 'health'
+  | 'armor'
+  | 'ammo'
+  | 'shells'
+  | 'cells'
+  | 'shotgun'
+  | 'lance'
+  | 'key_red'
+  | 'key_blue'
+  /** A slot the day's seed fills with a random enemy, or nothing. */
+  | 'opt_mob'
+  /** A slot the day's seed fills with a random pickup, or nothing. */
+  | 'opt_item';
 
 export interface SectorDef {
   /** Heights in world units, 64 per tile. */
@@ -23,6 +39,8 @@ export interface SectorDef {
   ceilTex: string;
   /** Texture for step and lip walls inside this sector. */
   wallTex?: string;
+  /** Health lost every half second while standing on this floor. */
+  damage?: number;
 }
 
 export interface LegendEntry {
@@ -45,6 +63,10 @@ export interface LevelDef {
   sectors: Record<string, SectorDef>;
   legend: Record<string, LegendEntry>;
   rows: string[];
+  /** Things placed by tile coordinate, as an alternative to legend entries. */
+  things?: [ThingKind, number, number][];
+  /** Player start by tile coordinate and facing in degrees. */
+  spawn?: [number, number, number];
 }
 
 export interface Sector extends SectorDef {
@@ -78,6 +100,8 @@ export interface Level {
   /** Index into `doors`, -1 if the tile is not a door. */
   doorOf: Int16Array;
   exit: Uint8Array;
+  /** Floor damage per tile, from its sector. */
+  hurt: Uint8Array;
   wallTex: string[];
   sectors: Sector[];
   doors: DoorDef[];
@@ -103,6 +127,7 @@ export function parseLevel(def: LevelDef): Level {
     sectorOf: new Int16Array(n).fill(-1),
     doorOf: new Int16Array(n).fill(-1),
     exit: new Uint8Array(n),
+    hurt: new Uint8Array(n),
     wallTex: new Array<string>(n).fill(''),
     sectors,
     doors: [],
@@ -132,6 +157,7 @@ export function parseLevel(def: LevelDef): Level {
       level.sectorOf[i] = s;
       level.floor[i] = units(sectors[s].floor);
       level.ceil[i] = units(sectors[s].ceil);
+      level.hurt[i] = sectors[s].damage ?? 0;
       if (entry.spawn !== undefined) {
         level.spawn = { tx: x, ty: y, angle: Math.round((entry.spawn * ANGLES) / 360) };
       }
@@ -140,6 +166,18 @@ export function parseLevel(def: LevelDef): Level {
       if (entry.door) doorEntry[i] = entry.door;
     }
   });
+
+  for (const [kind, tx, ty] of def.things ?? []) {
+    const i = tileIndex(level, tx, ty);
+    if (i < 0 || level.solid[i]) throw new Error(`level ${def.name}: ${kind} at ${tx},${ty} is not on an open tile`);
+    level.things.push({ kind, x: tx * ONE + ONE / 2, y: ty * ONE + ONE / 2 });
+  }
+  if (def.spawn) {
+    const [tx, ty, deg] = def.spawn;
+    const i = tileIndex(level, tx, ty);
+    if (i < 0 || level.solid[i]) throw new Error(`level ${def.name}: spawn ${tx},${ty} is not on an open tile`);
+    level.spawn = { tx, ty, angle: Math.round((deg * ANGLES) / 360) };
+  }
 
   // Group touching door tiles with the same texture and key into one door.
   for (let i = 0; i < n; i++) {

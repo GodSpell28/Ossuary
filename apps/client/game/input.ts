@@ -1,4 +1,15 @@
-import { ANGLES, BTN_FIRE, BTN_USE, MAX_TURN, type TickInput } from '@ossuary/sim';
+import {
+  ANGLES,
+  BTN_FIRE,
+  BTN_NEXT_WEAPON,
+  BTN_PREV_WEAPON,
+  BTN_SLOT1,
+  BTN_SLOT2,
+  BTN_SLOT3,
+  BTN_USE,
+  MAX_TURN,
+  type TickInput,
+} from '@ossuary/sim';
 
 // Collects keyboard and mouse state between ticks and turns it into one
 // integer TickInput per sim tick. Mouse motion is quantised to angle units and
@@ -17,6 +28,9 @@ export class InputCollector {
   locked = false;
   private fallback = false;
   private dragging = false;
+  /** Wheel notches waiting to become one next/previous weapon press each. */
+  private wheel = 0;
+  private wheelHeld = 0;
   /** Cosmetic vertical look, radians. Not part of the simulation. */
   pitch = 0;
 
@@ -26,6 +40,7 @@ export class InputCollector {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('pointerlockchange', this.onLockChange);
     document.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('wheel', this.onWheel, { passive: true });
     canvas.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
   }
@@ -52,6 +67,7 @@ export class InputCollector {
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('pointerlockchange', this.onLockChange);
     document.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
@@ -75,6 +91,18 @@ export class InputCollector {
     let buttons = 0;
     if (this.mouseButtons & 1 || k.has('ControlLeft')) buttons |= BTN_FIRE;
     if (k.has('KeyE') || k.has('Space')) buttons |= BTN_USE;
+    if (k.has('Digit1')) buttons |= BTN_SLOT1;
+    if (k.has('Digit2')) buttons |= BTN_SLOT2;
+    if (k.has('Digit3')) buttons |= BTN_SLOT3;
+    if (k.has('KeyQ')) buttons |= BTN_PREV_WEAPON;
+    // A wheel notch becomes one press: held for a tick, released for a tick.
+    if (this.wheelHeld) {
+      this.wheelHeld = 0;
+    } else if (this.wheel) {
+      buttons |= this.wheel > 0 ? BTN_NEXT_WEAPON : BTN_PREV_WEAPON;
+      this.wheel -= Math.sign(this.wheel);
+      this.wheelHeld = 1;
+    }
     return { forward, strafe, turn, buttons };
   }
 
@@ -111,6 +139,11 @@ export class InputCollector {
     this.turnAccum += e.movementX * ANGLE_PER_PIXEL;
     this.lookAccum = Math.max(-0.5, Math.min(0.5, this.lookAccum - e.movementY * RADIANS_PER_PIXEL));
     this.pitch = this.lookAccum;
+  };
+
+  private onWheel = (e: WheelEvent) => {
+    if (!this.locked || e.deltaY === 0) return;
+    this.wheel = Math.max(-2, Math.min(2, this.wheel + Math.sign(e.deltaY)));
   };
 
   private onMouseDown = (e: MouseEvent) => {

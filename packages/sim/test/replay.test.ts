@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InputLog, createSim, inputsFromBase64, inputsToBase64, isOver, levelForDay, replay, step, type TickInput } from '../src';
+import { InputLog, STAND_AND_DIE, createSim, inputsFromBase64, inputsToBase64, isOver, levelForDay, playScript, replay, step, type TickInput } from '../src';
 
 describe('replay', () => {
   const level = levelForDay(20733);
@@ -22,27 +22,19 @@ describe('replay', () => {
   });
 
   it('confirms a real death and the tile it happened on', () => {
-    // Standing still in the atrium never ends, so walk into the duct and wait.
-    const s = createSim(level, 20733);
-    const log = new InputLog();
-    const script: [TickInput, number][] = [
-      [{ forward: 0, strafe: 1, turn: 0, buttons: 0 }, 21],
-      [{ forward: 1, strafe: 0, turn: 0, buttons: 0 }, 114],
-      [{ forward: 0, strafe: 0, turn: 0, buttons: 2 }, 1],
-      [{ forward: 0, strafe: 0, turn: 0, buttons: 0 }, 60 * 120],
-    ];
-    outer: for (const [inp, n] of script) {
-      for (let i = 0; i < n; i++) {
-        if (isOver(s)) break outer;
-        log.push(inp);
-        step(s, level, inp);
-      }
-    }
+    const { state: s, inputs } = playScript(level, 20733, STAND_AND_DIE);
     expect(s.player.diedAt).toBeGreaterThan(0);
-    const r = replay(level, 20733, inputsFromBase64(inputsToBase64(log.toArray())));
+    const r = replay(level, 20733, inputsFromBase64(inputsToBase64(inputs)));
     expect(r.outcome).toBe('death');
     expect(r.tile).toBe(level.w * (s.player.y >> 16) + (s.player.x >> 16));
     expect(r.ticks).toBe(s.player.diedAt + 1);
+  });
+
+  it('a relic changes the outcome, so the verifier must replay with the same one', () => {
+    const { inputs } = playScript(level, 20733, STAND_AND_DIE);
+    const plain = replay(level, 20733, inputs);
+    const armored = replay(level, 20733, inputs, 6);
+    expect(armored.stateHash).not.toBe(plain.stateHash);
   });
 
   it('rejects a log replayed with the wrong seed or with extra input', () => {

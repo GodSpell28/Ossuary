@@ -146,6 +146,164 @@ function rusherDeath(stage: number): ImageData {
   });
 }
 
+// ---- caster: a hooded robed figure that throws embers ----
+
+interface CasterPose {
+  sway: number;
+  hands: 'low' | 'raise' | 'throw';
+  flash?: boolean;
+}
+
+const ROBE = '#46284e';
+const ROBE_DARK = '#2a1830';
+const EMBER = '#e0c060';
+const EMBER_HOT = '#ffffff';
+
+function caster(p: CasterPose): ImageData {
+  return draw(SPRITE_SIZE, SPRITE_SIZE, (c) => {
+    const cx = 32 + p.sway;
+    // Robe, wide at the hem
+    c.fillStyle = ROBE;
+    c.beginPath();
+    c.moveTo(cx - 6, 18);
+    c.lineTo(cx + 6, 18);
+    c.lineTo(cx + 13 + p.sway, 63);
+    c.lineTo(cx - 13 + p.sway, 63);
+    c.closePath();
+    c.fill();
+    c.fillStyle = ROBE_DARK;
+    c.fillRect(cx - 1, 24, 2, 39);
+    // Hood with a bone face inside
+    ellipse(c, cx, 13, 8, 9, ROBE);
+    ellipse(c, cx, 14, 5, 6, '#0a0908');
+    ellipse(c, cx, 15, 3, 4, BONE_SHADE);
+    c.fillStyle = EYE;
+    c.fillRect(cx - 2, 13, 1, 1);
+    c.fillRect(cx + 1, 13, 1, 1);
+    // Arms and hands
+    const hands: [number, number][] =
+      p.hands === 'low'
+        ? [[cx - 10, 36], [cx + 10, 36]]
+        : p.hands === 'raise'
+          ? [[cx - 12, 10], [cx + 12, 10]]
+          : [[cx - 4, 26], [cx + 4, 26]];
+    limb(c, [[cx - 6, 22], hands[0]], 4, ROBE);
+    limb(c, [[cx + 6, 22], hands[1]], 4, ROBE);
+    for (const [hx, hy] of hands) {
+      const r = p.hands === 'low' ? 2 : 4;
+      ellipse(c, hx, hy, r, r, EMBER);
+      if (p.hands !== 'low') ellipse(c, hx, hy, 2, 2, EMBER_HOT);
+    }
+    if (p.hands === 'throw') ellipse(c, cx, 24, 6, 6, EMBER);
+    if (p.flash) whiteFlash(c);
+  });
+}
+
+function casterDeath(stage: number): ImageData {
+  return draw(SPRITE_SIZE, SPRITE_SIZE, (c) => {
+    // The robe collapses into an empty heap with a few embers left in it.
+    const h = [30, 16, 7][stage];
+    c.fillStyle = ROBE;
+    c.beginPath();
+    c.moveTo(18, 63);
+    c.quadraticCurveTo(32, 63 - h * 2, 46, 63);
+    c.closePath();
+    c.fill();
+    ellipse(c, 32, 63 - h, 5, 4, stage < 2 ? BONE_SHADE : ROBE_DARK);
+    ellipse(c, 25, 60, 1.5, 1.5, EMBER);
+    if (stage < 2) ellipse(c, 38, 58, 2, 2, EMBER);
+  });
+}
+
+// ---- heavy: a hulking brute plated in bone ----
+
+interface HeavyPose {
+  stride: number;
+  arms: 'down' | 'raise' | 'smash';
+  flash?: boolean;
+}
+
+function heavy(p: HeavyPose): ImageData {
+  return draw(SPRITE_SIZE, SPRITE_SIZE, (c) => {
+    // Legs like pillars
+    c.fillStyle = FLESH_DARK;
+    c.fillRect(20 - p.stride * 2, 44, 9, 20);
+    c.fillRect(35 + p.stride * 2, 44, 9, 20);
+    // Torso
+    ellipse(c, 32, 32, 20, 16, FLESH);
+    // Bone plates across chest and shoulders
+    ellipse(c, 14, 22, 8, 6, BONE);
+    ellipse(c, 50, 22, 8, 6, BONE);
+    for (let i = 0; i < 3; i++) {
+      c.fillStyle = i % 2 ? BONE_SHADE : BONE;
+      c.fillRect(22, 26 + i * 6, 20, 4);
+    }
+    // Small head sunk between the shoulders
+    ellipse(c, 32, 15, 6, 6, BONE);
+    c.fillStyle = EYE;
+    c.fillRect(29, 14, 2, 2);
+    c.fillRect(33, 14, 2, 2);
+    // Fists
+    const fists: [number, number][] =
+      p.arms === 'down'
+        ? [[8, 44 + p.stride * 2], [56, 44 - p.stride * 2]]
+        : p.arms === 'raise'
+          ? [[10, 6], [54, 6]]
+          : [[22, 50], [42, 50]];
+    for (const [fx, fy] of fists) {
+      limb(c, [[fx < 32 ? 14 : 50, 24], [fx, fy]], 7, FLESH);
+      ellipse(c, fx, fy, 6, 6, BONE_SHADE);
+    }
+    if (p.flash) whiteFlash(c);
+  });
+}
+
+function heavyDeath(stage: number): ImageData {
+  return draw(SPRITE_SIZE, SPRITE_SIZE, (c) => {
+    ellipse(c, 32, 61, 10 + stage * 8, 2 + stage, '#5e1510');
+    const h = [26, 14, 8][stage];
+    ellipse(c, 32, 63 - h / 2, 22, h / 2, FLESH);
+    ellipse(c, 14, 62 - h, 7, 5, BONE);
+    ellipse(c, 50, 62 - h, 7, 5, BONE);
+    ellipse(c, 32, 62 - h, 5, 4, BONE_SHADE);
+  });
+}
+
+function whiteFlash(c: Ctx) {
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = 'rgba(255,255,255,0.55)';
+  c.fillRect(0, 0, 64, 64);
+  c.globalCompositeOperation = 'source-over';
+}
+
+// ---- projectiles ----
+
+function emberBall(): ImageData {
+  return draw(32, 32, (c) => {
+    ellipse(c, 16, 16, 9, 9, '#b8321e');
+    ellipse(c, 16, 16, 6, 6, EMBER);
+    ellipse(c, 15, 15, 3, 3, EMBER_HOT);
+  });
+}
+
+function lanceBolt(): ImageData {
+  return draw(32, 32, (c) => {
+    ellipse(c, 16, 16, 8, 8, '#3a6626');
+    ellipse(c, 16, 16, 5, 5, '#9ccc4a');
+    ellipse(c, 16, 16, 2, 2, EMBER_HOT);
+  });
+}
+
+function puff(): ImageData {
+  return draw(32, 32, (c) => {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ellipse(c, 16 + Math.cos(a) * 7, 16 + Math.sin(a) * 7, 3, 3, i % 2 ? '#e0c060' : '#aa9e8c');
+    }
+    ellipse(c, 16, 16, 4, 4, '#ffffff');
+  });
+}
+
 function pickup(fn: (c: Ctx) => void): ImageData {
   return draw(SPRITE_SIZE, SPRITE_SIZE, fn);
 }
@@ -190,6 +348,46 @@ function ammoBox(c: Ctx) {
     c.fillStyle = '#e0c060';
     c.fillRect(23 + i * 5, 43, 3, 2);
   }
+}
+
+function shellBox(c: Ctx) {
+  c.fillStyle = '#5e1510';
+  c.fillRect(20, 50, 24, 13);
+  c.fillStyle = '#3a0c0a';
+  c.fillRect(20, 50, 24, 3);
+  for (let i = 0; i < 4; i++) {
+    c.fillStyle = '#b8321e';
+    c.fillRect(22 + i * 6, 42, 4, 9);
+    c.fillStyle = '#b98447';
+    c.fillRect(22 + i * 6, 49, 4, 2);
+  }
+}
+
+function cellPack(c: Ctx) {
+  c.fillStyle = '#232d40';
+  c.fillRect(22, 46, 20, 17);
+  c.fillStyle = '#9ccc4a';
+  c.fillRect(25, 49, 14, 4);
+  c.fillRect(25, 56, 14, 4);
+  c.fillStyle = '#7489a3';
+  c.fillRect(28, 43, 8, 3);
+}
+
+function shotgunPickup(c: Ctx) {
+  c.fillStyle = '#7d4e2c';
+  c.fillRect(10, 54, 16, 5);
+  c.fillStyle = '#232d40';
+  c.fillRect(24, 53, 30, 3);
+  c.fillRect(24, 57, 30, 2);
+  c.fillStyle = '#52657e';
+  c.fillRect(30, 52, 8, 8);
+}
+
+function lancePickup(c: Ctx) {
+  limb(c, [[12, 58], [52, 50]], 3, '#b98447');
+  limb(c, [[12, 58], [52, 50]], 1, '#e0c060');
+  ellipse(c, 54, 49, 5, 5, '#3a6626');
+  ellipse(c, 54, 49, 3, 3, '#9ccc4a');
 }
 
 function keycard(color: string, light: string) {
@@ -296,11 +494,70 @@ function grave(state: 'full' | 'relic' | 'looted'): ImageData {
   });
 }
 
+/** Shotgun, 96x72: heavy twin barrels held low. Frame 1 fires. */
+function shotgunView(firing: boolean): ImageData {
+  return draw(96, 72, (c) => {
+    if (firing) {
+      ellipse(c, 48, 10, 18, 12, '#e0c060');
+      ellipse(c, 48, 11, 10, 7, '#ffffff');
+    }
+    c.fillStyle = '#45291a';
+    c.beginPath();
+    c.moveTo(30, 72);
+    c.lineTo(38, 50);
+    c.lineTo(60, 50);
+    c.lineTo(70, 72);
+    c.closePath();
+    c.fill();
+    ellipse(c, 49, 52, 13, 7, '#9a6638');
+    // Stock and pump
+    c.fillStyle = '#7d4e2c';
+    c.fillRect(40, 38, 18, 14);
+    c.fillStyle = '#613a22';
+    c.fillRect(40, 38, 18, 3);
+    // Barrels
+    c.fillStyle = '#232d40';
+    c.fillRect(40, 16, 8, 24);
+    c.fillRect(50, 16, 8, 24);
+    c.fillStyle = '#36465e';
+    c.fillRect(40, 16, 2, 24);
+    c.fillRect(50, 16, 2, 24);
+    c.fillStyle = '#0a0908';
+    c.fillRect(42, 15, 4, 3);
+    c.fillRect(52, 15, 4, 3);
+  });
+}
+
+/** Ember Lance, 96x72: a brass rod with a green crystal tip. Frame 1 fires. */
+function lanceView(firing: boolean): ImageData {
+  return draw(96, 72, (c) => {
+    c.fillStyle = '#45291a';
+    c.beginPath();
+    c.moveTo(44, 72);
+    c.lineTo(50, 54);
+    c.lineTo(68, 54);
+    c.lineTo(76, 72);
+    c.closePath();
+    c.fill();
+    ellipse(c, 59, 55, 10, 6, '#9a6638');
+    limb(c, [[60, 64], [50, 18]], 7, '#9a6638');
+    limb(c, [[60, 64], [50, 18]], 3, '#e0c060');
+    for (let i = 0; i < 3; i++) ellipse(c, 57 - i * 2.5, 50 - i * 10, 4, 2, '#7d4e2c');
+    ellipse(c, 49, 14, firing ? 10 : 7, firing ? 10 : 8, '#3a6626');
+    ellipse(c, 49, 14, firing ? 7 : 4, firing ? 7 : 5, '#9ccc4a');
+    if (firing) ellipse(c, 49, 14, 3, 3, '#ffffff');
+  });
+}
+
 export interface SpriteSet {
   rusher: Record<string, ImageData>;
+  caster: Record<string, ImageData>;
+  heavy: Record<string, ImageData>;
   pickups: Record<string, ImageData>;
   graves: Record<string, ImageData>;
-  pistol: ImageData[];
+  projectiles: Record<string, ImageData>;
+  /** Per weapon index: [idle, firing]. */
+  weapons: ImageData[][];
 }
 
 export function paintSprites(): SpriteSet {
@@ -315,7 +572,32 @@ export function paintSprites(): SpriteSet {
       die2: rusherDeath(1),
       corpse: rusherDeath(2),
     },
+    caster: {
+      walk1: caster({ sway: -1, hands: 'low' }),
+      walk2: caster({ sway: 1, hands: 'low' }),
+      attack1: caster({ sway: 0, hands: 'raise' }),
+      attack2: caster({ sway: 0, hands: 'throw' }),
+      pain: caster({ sway: -2, hands: 'low', flash: true }),
+      die1: casterDeath(0),
+      die2: casterDeath(1),
+      corpse: casterDeath(2),
+    },
+    heavy: {
+      walk1: heavy({ stride: 1, arms: 'down' }),
+      walk2: heavy({ stride: -1, arms: 'down' }),
+      attack1: heavy({ stride: 0, arms: 'raise' }),
+      attack2: heavy({ stride: 0, arms: 'smash' }),
+      pain: heavy({ stride: 0, arms: 'down', flash: true }),
+      die1: heavyDeath(0),
+      die2: heavyDeath(1),
+      corpse: heavyDeath(2),
+    },
+    projectiles: { ember: emberBall(), bolt: lanceBolt(), puff: puff() },
     pickups: {
+      shells: pickup(shellBox),
+      cells: pickup(cellPack),
+      shotgun: pickup(shotgunPickup),
+      lance: pickup(lancePickup),
       health: pickup(healthVial),
       armor: pickup(armorVest),
       ammo: pickup(ammoBox),
@@ -323,6 +605,10 @@ export function paintSprites(): SpriteSet {
       key_blue: pickup(keycard('#36465e', '#7489a3')),
     },
     graves: { full: grave('full'), relic: grave('relic'), looted: grave('looted') },
-    pistol: [pistol(false), pistol(true)],
+    weapons: [
+      [pistol(false), pistol(true)],
+      [shotgunView(false), shotgunView(true)],
+      [lanceView(false), lanceView(true)],
+    ],
   };
 }

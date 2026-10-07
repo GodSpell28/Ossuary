@@ -11,9 +11,10 @@ import {
   createSim,
   hashSim,
   hex32,
+  WEAPONS,
+  ammoFor,
   isOver,
-  parseLevel,
-  provingGrounds,
+  levelForDay,
   step,
   type Level,
   type SimEvent,
@@ -47,6 +48,11 @@ export interface HudState {
   hp: number;
   armor: number;
   ammo: number;
+  weapon: string;
+  /** Bitmask of owned weapons, for the weapon strip. */
+  owned: number;
+  weaponIndex: number;
+  relic: number;
   keys: number;
   kills: number;
   totalMobs: number;
@@ -92,6 +98,7 @@ export class Engine {
   private simMs = 0;
   private renderMs = 0;
   private lastHud = '';
+  private relic = 0;
   private resizeObserver: ResizeObserver;
 
   constructor(
@@ -109,16 +116,16 @@ export class Engine {
     canvas.style.cursor = 'crosshair';
     container.appendChild(canvas);
 
-    this.level = parseLevel(provingGrounds);
+    this.level = levelForDay(seed);
     this.materials = createWorldMaterials();
     const world = buildLevelMesh(this.level, this.materials);
     this.light = world.light;
     this.scene.add(world.group);
     this.doorMeshes = buildDoorMeshes(this.level, this.materials, this.light);
     this.doorMeshes.forEach((m) => this.scene.add(m));
-    this.entities = new EntityRenderer(this.light);
+    this.entities = new EntityRenderer(this.light, this.level);
     this.scene.add(this.entities.group);
-    this.weapon = new WeaponView(this.entities.pistolFrames, this.light);
+    this.weapon = new WeaponView(this.entities.weaponFrames, this.light);
     this.input = new InputCollector(canvas);
 
     this.restart(seed);
@@ -138,10 +145,11 @@ export class Engine {
     this.raf = requestAnimationFrame(frame);
   }
 
-  /** Starts a fresh run on the same level. */
-  restart(seed = this.seed): void {
+  /** Starts a fresh run on the same level, optionally carrying a relic. */
+  restart(seed = this.seed, relic = this.relic): void {
     this.seed = seed;
-    this.sim = createSim(this.level, seed);
+    this.relic = relic;
+    this.sim = createSim(this.level, seed, { relic });
     this.prev = cloneSim(this.sim);
     this.log = new InputLog();
     this.viewZ = this.sim.player.z + VIEW_HEIGHT;
@@ -181,7 +189,10 @@ export class Engine {
       this.prev = cloneSim(this.sim);
       if (!isOver(this.sim)) this.log.push(inp);
       step(this.sim, this.level, inp);
-      for (const e of this.sim.events) this.cb.onEvent(e, this.sim);
+      for (const e of this.sim.events) {
+        this.entities.onEvent(e, this.sim);
+        this.cb.onEvent(e, this.sim);
+      }
     }
     this.prev = cloneSim(this.sim);
     return this.sim;
@@ -198,6 +209,10 @@ export class Engine {
 
   get seedValue(): number {
     return this.seed;
+  }
+
+  get relicValue(): number {
+    return this.relic;
   }
 
   get levelData(): Level {
@@ -235,7 +250,10 @@ export class Engine {
         this.prev = cloneSim(this.sim);
         if (!over) this.log.push(inp);
         step(this.sim, this.level, inp);
-        for (const e of this.sim.events) this.cb.onEvent(e, this.sim);
+        for (const e of this.sim.events) {
+          this.entities.onEvent(e, this.sim);
+          this.cb.onEvent(e, this.sim);
+        }
         this.accumulator -= TICK_MS;
       }
     } else {
@@ -253,7 +271,7 @@ export class Engine {
       const b = this.sim.doors[i].open;
       m.position.y = (this.level.floor[this.level.doors[i].tiles[0]] + a + (b - a) * alpha) / ONE;
     });
-    this.entities.update(this.prev, this.sim, alpha, this.camera.rotation.y);
+    this.entities.update(this.prev, this.sim, alpha, this.camera.rotation.y, dtSec);
     this.weapon.update(this.sim, this.bobPhase, this.bobAmount, dtSec);
     this.materials.setTime(now / 1000);
     this.pipeline.render(this.renderer, [
@@ -292,7 +310,11 @@ export class Engine {
       locked: this.input.locked,
       hp: p.hp,
       armor: p.armor,
-      ammo: p.ammo,
+      ammo: ammoFor(p),
+      weapon: WEAPONS[p.weapon].name,
+      owned: p.owned,
+      weaponIndex: p.weapon,
+      relic: p.relic,
       keys: p.keys,
       kills: p.kills,
       totalMobs: s.mobs.length,

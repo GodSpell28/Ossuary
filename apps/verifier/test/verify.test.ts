@@ -1,4 +1,4 @@
-import { InputLog, createSim, inputsToBase64, isOver, levelForDay, step, tileIndex, type TickInput } from '@ossuary/sim';
+import { STAND_AND_DIE, inputsToBase64, levelForDay, playScript, replay, tileIndex } from '@ossuary/sim';
 import { hexToString, recoverTypedDataAddress, type Address } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
@@ -9,29 +9,21 @@ const player = '0x77E683b652A8909a404Fc5748f72236f3FDDB57f' as Address;
 const game = '0x2e8c113ff52cc3bbb9748f64c589cf1a0a55b65f' as Address;
 const signer = privateKeyToAccount(generatePrivateKey());
 
-function deps(run: Partial<RunInfo> = {}): VerifyDeps {
-  return { signer, chainId: 43113, game, readRun: async () => ({ player, day: DAY, open: true, ...run }) };
+function deps(run: Partial<RunInfo> = {}, relicsHeld: number[] = []): VerifyDeps {
+  return {
+    signer,
+    chainId: 43113,
+    game,
+    readRun: async () => ({ player, day: DAY, open: true, ...run }),
+    readRelicBalance: async (_p, id) => (relicsHeld.includes(id) ? 1n : 0n),
+  };
 }
 
-/** Walks through the door into the duct and stands there until the rushers win. */
-function deathLog() {
+/** Opens the crypt door, walks into the bone hall and stands there until killed. */
+function deathLog(relic = 0) {
   const level = levelForDay(DAY);
-  const s = createSim(level, DAY);
-  const log = new InputLog();
-  const script: [TickInput, number][] = [
-    [{ forward: 0, strafe: 1, turn: 0, buttons: 0 }, 21],
-    [{ forward: 1, strafe: 0, turn: 0, buttons: 0 }, 114],
-    [{ forward: 0, strafe: 0, turn: 0, buttons: 2 }, 1],
-    [{ forward: 0, strafe: 0, turn: 0, buttons: 0 }, 60 * 120],
-  ];
-  outer: for (const [inp, n] of script) {
-    for (let i = 0; i < n; i++) {
-      if (isOver(s)) break outer;
-      log.push(inp);
-      step(s, level, inp);
-    }
-  }
-  return { inputs: log.toArray(), tile: tileIndex(level, s.player.x >> 16, s.player.y >> 16) };
+  const { state, inputs } = playScript(level, DAY, STAND_AND_DIE, { relic });
+  return { inputs, tile: tileIndex(level, state.player.x >> 16, state.player.y >> 16) };
 }
 
 describe('verifyDeath', () => {
@@ -78,9 +70,29 @@ describe('verifyDeath', () => {
     await expect(verifyDeath(deps({ open: false }), body)).rejects.toThrow(/closed/);
   });
 
-  it('refuses a death replayed under another day’s seed', async () => {
-    const body = { runId: '2', player, inputs: inputsToBase64(deathLog().inputs) };
-    await expect(verifyDeath(deps({ day: DAY + 1 }), body)).rejects.toThrow(/does not end in a death/);
+  it('replays under the run’s own day, so a log from another day is refused', async () => {
+    const { inputs } = deathLog();
+    // Two days can, by chance, kill a passive player on the same tick; use one that does not.
+    const level = levelForDay(DAY);
+    const other = [1, 2, 3, 4, 5].map((k) => DAY + k).find((d) => replay(level, d, inputs).outcome !== 'death')!;
+    const body = { runId: '2', player, inputs: inputsToBase64(inputs) };
+    await expect(verifyDeath(deps({ day: other }), body)).rejects.toThrow(/does not end in a death/);
+  });
+});
+
+describe('relics', () => {
+  it('refuses a relic the player does not hold', async () => {
+    const body = { runId: '2', player, inputs: inputsToBase64(deathLog(6).inputs), relicId: 6 };
+    await expect(verifyDeath(deps(), body)).rejects.toThrow(/does not hold relic 6/);
+  });
+
+  it('replays with the carried relic, so a relic run verifies only with that relic', async () => {
+    const withPlate = deathLog(6);
+    const ok = await verifyDeath(deps({}, [6]), { runId: '2', player, inputs: inputsToBase64(withPlate.inputs), relicId: 6 });
+    expect(ok.tile).toBe(withPlate.tile);
+    await expect(
+      verifyDeath(deps({}, [6]), { runId: '2', player, inputs: inputsToBase64(withPlate.inputs), relicId: 0 }),
+    ).rejects.toThrow(/does not end in a death/);
   });
 });
 

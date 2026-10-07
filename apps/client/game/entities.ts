@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { MobState, ONE, PISTOL_COOLDOWN, type SimState } from '@ossuary/sim';
+import { MobState, ONE, WEAPONS, tileIndex, type Level, type SimEvent, type SimState } from '@ossuary/sim';
 import type { LightSampler } from './levelMesh';
 import { FOG_FAR, FOG_NEAR } from './materials';
 import { SPRITE_SIZE, paintSprites, type SpriteSet } from './sprites';
 
-// Billboard sprites for mobs and pickups (they turn to face the camera around
-// the vertical axis only, like the originals) and the weapon drawn over the
-// view in screen space. Both are lit by the sector light where they stand.
+// Billboard sprites for mobs, pickups, projectiles and graves (they turn to
+// face the camera around the vertical axis only, like the originals) and the
+// weapon drawn over the view in screen space. Everything is lit by the
+// sector light where it stands; projectiles are fullbright.
 
 const spriteVertex = /* glsl */ `
   varying vec2 vUv;
@@ -70,30 +71,62 @@ function billboardGeometry(): THREE.PlaneGeometry {
   return g;
 }
 
+/** A centred quad for projectiles and puffs. */
+function centredGeometry(size: number): THREE.PlaneGeometry {
+  return new THREE.PlaneGeometry(size, size);
+}
+
+const MOB_SCALE: Record<string, number> = { rusher: 1, caster: 1, heavy: 1.4 };
+
+export interface GraveMarker {
+  /** Tile centre in tiles. */
+  x: number;
+  y: number;
+  z: number;
+  tile: number;
+  looted: boolean;
+  relic: boolean;
+  own: boolean;
+}
+
+interface Puff {
+  mesh: THREE.Mesh;
+  age: number;
+}
+
 export class EntityRenderer {
   readonly group = new THREE.Group();
   private textures: Record<string, THREE.Texture> = {};
   private mobMeshes: THREE.Mesh[] = [];
   private pickupMeshes: THREE.Mesh[] = [];
+  private graveMeshes: THREE.Mesh[] = [];
+  private projectileMeshes: THREE.Mesh[] = [];
+  private puffs: Puff[] = [];
   private geometry = billboardGeometry();
+  private small = centredGeometry(0.4);
   private sprites: SpriteSet;
 
-  constructor(private readonly light: LightSampler) {
+  constructor(
+    private readonly light: LightSampler,
+    private readonly level: Level,
+  ) {
     this.sprites = paintSprites();
-    for (const [k, img] of Object.entries(this.sprites.rusher)) this.textures[`rusher.${k}`] = toTexture(img);
+    const sets = { rusher: this.sprites.rusher, caster: this.sprites.caster, heavy: this.sprites.heavy };
+    for (const [kind, frames] of Object.entries(sets)) {
+      for (const [k, img] of Object.entries(frames)) this.textures[`${kind}.${k}`] = toTexture(img);
+    }
     for (const [k, img] of Object.entries(this.sprites.pickups)) this.textures[`pickup.${k}`] = toTexture(img);
     for (const [k, img] of Object.entries(this.sprites.graves)) this.textures[`grave.${k}`] = toTexture(img);
+    for (const [k, img] of Object.entries(this.sprites.projectiles)) this.textures[`fx.${k}`] = toTexture(img);
   }
 
-  private graveMeshes: THREE.Mesh[] = [];
+  get weaponFrames(): ImageData[][] {
+    return this.sprites.weapons;
+  }
 
   /** Shows graves from the chain. They are scenery: the sim never sees them. */
   setGraves(graves: GraveMarker[]): void {
-    while (this.graveMeshes.length > graves.length) {
-      const m = this.graveMeshes.pop()!;
-      this.group.remove(m);
-      (m.material as THREE.Material).dispose();
-    }
+    while (this.graveMeshes.length > graves.length) this.remove(this.graveMeshes.pop()!);
     while (this.graveMeshes.length < graves.length) this.graveMeshes.push(this.add('grave.full'));
     // Several deaths on one tile fan out so each stone stays visible.
     const perTile = new Map<number, number>();
@@ -113,27 +146,45 @@ export class EntityRenderer {
     });
   }
 
-  get pistolFrames(): ImageData[] {
-    return this.sprites.pistol;
-  }
-
   /** Creates meshes to match a fresh sim. Call again after a restart. */
   reset(s: SimState): void {
-    for (const m of [...this.mobMeshes, ...this.pickupMeshes]) {
-      this.group.remove(m);
-      (m.material as THREE.Material).dispose();
-    }
-    this.mobMeshes = s.mobs.map(() => this.add('rusher.walk1'));
+    for (const m of [...this.mobMeshes, ...this.pickupMeshes, ...this.projectileMeshes]) this.remove(m);
+    for (const p of this.puffs) this.remove(p.mesh);
+    this.puffs = [];
+    this.projectileMeshes = [];
+    this.mobMeshes = s.mobs.map((m) => {
+      const mesh = this.add(`${m.kind}.walk1`);
+      mesh.scale.setScalar(MOB_SCALE[m.kind] ?? 1);
+      return mesh;
+    });
     this.pickupMeshes = s.pickups.map((p) => this.add(`pickup.${p.kind}`));
   }
 
-  private add(tex: string): THREE.Mesh {
-    const mesh = new THREE.Mesh(this.geometry, spriteMaterial(this.textures[tex]));
+  private add(tex: string, geometry: THREE.BufferGeometry = this.geometry): THREE.Mesh {
+    const mesh = new THREE.Mesh(geometry, spriteMaterial(this.textures[tex]));
     this.group.add(mesh);
     return mesh;
   }
 
-  update(prev: SimState, cur: SimState, alpha: number, yaw: number): void {
+  private remove(m: THREE.Mesh): void {
+    this.group.remove(m);
+    (m.material as THREE.Material).dispose();
+  }
+
+  /** Spawns short-lived impact puffs for wall hits and projectile bursts. */
+  onEvent(e: SimEvent, s: SimState): void {
+    if (e.type !== 'hitWall' && e.type !== 'projectileHit') return;
+    const x = e.x / ONE;
+    const y = e.y / ONE;
+    const mesh = this.add(e.type === 'projectileHit' && e.owner >= 0 ? 'fx.ember' : 'fx.puff', this.small);
+    const z = (s.player.z / ONE) + 0.55;
+    mesh.position.set(x, z, y);
+    (mesh.material as THREE.ShaderMaterial).uniforms.uLight.value.set(0.5, 0.5, 0.5);
+    this.puffs.push({ mesh, age: 0 });
+    if (this.puffs.length > 40) this.remove(this.puffs.shift()!.mesh);
+  }
+
+  update(prev: SimState, cur: SimState, alpha: number, yaw: number, dtSec: number): void {
     cur.mobs.forEach((m, i) => {
       const mesh = this.mobMeshes[i];
       const a = prev.mobs[i] ?? m;
@@ -142,10 +193,10 @@ export class EntityRenderer {
       mesh.position.set(x, m.z / ONE, y);
       mesh.rotation.y = yaw;
       const mat = mesh.material as THREE.ShaderMaterial;
-      mat.uniforms.map.value = this.textures[`rusher.${mobFrame(m.state, m.timer, cur.tick)}`];
-      setLight(mat, this.light, x, y);
+      mat.uniforms.map.value = this.textures[`${m.kind}.${mobFrame(m.state, m.timer, cur.tick)}`];
+      // Casters glow while they wind up a throw.
+      setLight(mat, this.light, x, y, m.kind === 'caster' && m.state === MobState.Attack ? 0.2 : 0);
     });
-    for (const m of this.graveMeshes) m.rotation.y = yaw;
     cur.pickups.forEach((p, i) => {
       const mesh = this.pickupMeshes[i];
       mesh.visible = !p.taken;
@@ -155,27 +206,46 @@ export class EntityRenderer {
       // A slow bob so pickups read as pickups.
       const bob = Math.sin(cur.tick / 20 + i) * 0.03;
       mesh.position.set(x, bob - 0.05, y);
+      mesh.position.y += this.floorAt(x, y);
       mesh.rotation.y = yaw;
       setLight(mesh.material as THREE.ShaderMaterial, this.light, x, y, 0.15);
     });
+    for (const m of this.graveMeshes) m.rotation.y = yaw;
+
+    // Projectiles: a pooled mesh per live projectile, fullbright.
+    while (this.projectileMeshes.length < cur.projectiles.length) this.projectileMeshes.push(this.add('fx.ember', this.small));
+    this.projectileMeshes.forEach((mesh, i) => {
+      const pr = cur.projectiles[i];
+      mesh.visible = !!pr;
+      if (!pr) return;
+      const mat = mesh.material as THREE.ShaderMaterial;
+      mat.uniforms.map.value = this.textures[pr.owner < 0 ? 'fx.bolt' : 'fx.ember'];
+      (mat.uniforms.uLight.value as THREE.Vector3).set(0.55, 0.55, 0.55);
+      mesh.position.set((pr.x + pr.vx * alpha) / ONE, pr.z / ONE, (pr.y + pr.vy * alpha) / ONE);
+      mesh.rotation.y = yaw;
+    });
+
+    for (const p of this.puffs) {
+      p.age += dtSec;
+      p.mesh.rotation.y = yaw;
+      p.mesh.scale.setScalar(1 + p.age * 3);
+      p.mesh.visible = p.age < 0.18;
+    }
+    while (this.puffs.length && this.puffs[0].age > 0.3) this.remove(this.puffs.shift()!.mesh);
+  }
+
+  private floorAt(x: number, y: number): number {
+    const t = tileIndex(this.level, Math.floor(x), Math.floor(y));
+    return t >= 0 ? this.level.floor[t] / ONE : 0;
   }
 
   dispose(): void {
-    this.reset({ mobs: [], pickups: [] } as unknown as SimState);
+    this.reset({ mobs: [], pickups: [], projectiles: [] } as unknown as SimState);
+    this.setGraves([]);
     Object.values(this.textures).forEach((t) => t.dispose());
     this.geometry.dispose();
+    this.small.dispose();
   }
-}
-
-export interface GraveMarker {
-  /** Tile centre in tiles. */
-  x: number;
-  y: number;
-  z: number;
-  tile: number;
-  looted: boolean;
-  relic: boolean;
-  own: boolean;
 }
 
 function setLight(mat: THREE.ShaderMaterial, light: LightSampler, x: number, y: number, boost = 0): void {
@@ -186,7 +256,7 @@ function setLight(mat: THREE.ShaderMaterial, light: LightSampler, x: number, y: 
 function mobFrame(state: MobState, timer: number, tick: number): string {
   switch (state) {
     case MobState.Attack:
-      return timer < 10 ? 'attack1' : 'attack2';
+      return timer < 12 ? 'attack1' : 'attack2';
     case MobState.Pain:
       return 'pain';
     case MobState.Dead:
@@ -198,22 +268,23 @@ function mobFrame(state: MobState, timer: number, tick: number): string {
   }
 }
 
-/** The pistol, drawn in the low-res overlay pass with an orthographic camera in pixels. */
+/** The held weapon, drawn in the low-res overlay pass with an orthographic camera in pixels. */
 export class WeaponView {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.OrthographicCamera(0, 480, 270, 0, -1, 1);
-  private frames: THREE.Texture[];
+  private frames: THREE.Texture[][];
   private mesh: THREE.Mesh;
   private kick = 0;
+  private lastCooldown = 0;
 
-  constructor(frames: ImageData[], private readonly light: LightSampler) {
-    this.frames = frames.map(toTexture);
+  constructor(frames: ImageData[][], private readonly light: LightSampler) {
+    this.frames = frames.map((pair) => pair.map(toTexture));
     // Unit-height quad scaled each frame so the gun is a fixed share of the
     // view height whatever the aspect ratio.
-    const aspect = frames[0].width / frames[0].height;
+    const aspect = frames[0][0].width / frames[0][0].height;
     const g = new THREE.PlaneGeometry(aspect, 1);
     g.translate(0, 0.5, 0);
-    this.mesh = new THREE.Mesh(g, spriteMaterial(this.frames[0], false));
+    this.mesh = new THREE.Mesh(g, spriteMaterial(this.frames[0][0], false));
     this.scene.add(this.mesh);
   }
 
@@ -225,11 +296,14 @@ export class WeaponView {
 
   update(s: SimState, bobPhase: number, bobAmount: number, dtSec: number): void {
     const p = s.player;
-    const firing = p.cooldown > PISTOL_COOLDOWN - 4;
-    if (p.cooldown === PISTOL_COOLDOWN - 1) this.kick = 1;
-    this.kick = Math.max(0, this.kick - dtSec * 6);
+    const w = WEAPONS[p.weapon];
+    // A fresh shot resets the cooldown upward.
+    if (p.cooldown > this.lastCooldown) this.kick = 1;
+    this.lastCooldown = p.cooldown;
+    const firing = p.cooldown > 0 && w.cooldown - p.cooldown < 4;
+    this.kick = Math.max(0, this.kick - dtSec * (p.weapon === 1 ? 3 : 6));
     const mat = this.mesh.material as THREE.ShaderMaterial;
-    mat.uniforms.map.value = this.frames[firing ? 1 : 0];
+    mat.uniforms.map.value = this.frames[p.weapon][firing ? 1 : 0];
     const x = p.x / ONE;
     const y = p.y / ONE;
     const [r, g, b] = this.light.floorAt(x, y);
@@ -238,19 +312,25 @@ export class WeaponView {
     (mat.uniforms.uLight.value as THREE.Vector3).set(r + f, g + f, b + f * 0.6);
 
     const dead = p.diedAt >= 0 ? Math.min(1, (s.tick - p.diedAt) / 30) : 0;
-    const w = this.camera.right;
+    // Lower the old weapon and raise the new one during a switch.
+    const lowering = p.switching > 0 ? Math.sin((p.switching / 14) * Math.PI) : 0;
+    const width = this.camera.right;
     const h = this.camera.top;
     const size = h * 0.42;
     this.mesh.scale.set(size, size, 1);
     this.mesh.position.set(
-      w / 2 + h * 0.04 + Math.cos(bobPhase) * h * 0.03 * bobAmount,
-      -h * 0.02 + Math.abs(Math.sin(bobPhase)) * h * 0.02 * bobAmount - this.kick * h * 0.025 - dead * size,
+      width / 2 + h * 0.04 + Math.cos(bobPhase) * h * 0.03 * bobAmount,
+      -h * 0.02 +
+        Math.abs(Math.sin(bobPhase)) * h * 0.02 * bobAmount -
+        this.kick * h * (p.weapon === 1 ? 0.06 : 0.025) -
+        dead * size -
+        lowering * size * 0.6,
       0,
     );
   }
 
   dispose(): void {
-    this.frames.forEach((t) => t.dispose());
+    this.frames.flat().forEach((t) => t.dispose());
     this.mesh.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();
   }

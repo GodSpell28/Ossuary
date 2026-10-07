@@ -99,7 +99,7 @@ describe('combat', () => {
     expect(ev.some((e) => e.type === 'hitMob')).toBe(true);
     expect(s.mobs[0].state).toBe(MobState.Dead);
     expect(s.player.kills).toBe(1);
-    expect(s.player.ammo).toBeLessThan(50);
+    expect(s.player.bullets).toBeLessThan(50);
   });
 
   it('a rusher wakes, closes in and kills an idle player, leaving a death tile', () => {

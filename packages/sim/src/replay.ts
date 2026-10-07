@@ -1,7 +1,7 @@
 import type { Level } from './level';
 import { tileIndex } from './level';
 import { parseLevel } from './level';
-import { provingGrounds } from './levels/proving';
+import { charnelDescent } from './levels/charnel';
 import { unpackInput } from './input';
 import { TICK_RATE, createSim, hashSim, step } from './sim';
 
@@ -9,9 +9,16 @@ import { TICK_RATE, createSim, hashSim, step } from './sim';
 // the claim). A run is fully described by its level, its seed and its packed
 // input log, so replaying the log must reproduce the outcome exactly.
 
-/** The level played on a given day. One level for now; rotation comes later. */
+const cache = new Map<string, Level>();
+
+/**
+ * The level played on a given day. One hand-built map; what changes daily is
+ * the seed, which fills its optional enemy and pickup slots.
+ */
 export function levelForDay(_day: number): Level {
-  return parseLevel(provingGrounds);
+  let l = cache.get(charnelDescent.name);
+  if (!l) cache.set(charnelDescent.name, (l = parseLevel(charnelDescent)));
+  return l;
 }
 
 export interface ReplayResult {
@@ -27,12 +34,13 @@ export interface ReplayResult {
 }
 
 /**
- * Replays an input log from the start. The client stops logging the moment a
- * run ends, so a valid log ends on exactly the tick of death or exit; any
- * input after that is treated as tampering and the run is 'incomplete'.
+ * Replays an input log from the start, carrying the same relic as the run.
+ * The client stops logging the moment a run ends, so a valid log ends on
+ * exactly the tick of death or exit; any input after that is treated as
+ * tampering and the run is 'incomplete'.
  */
-export function replay(level: Level, seed: number, inputs: Int32Array): ReplayResult {
-  const s = createSim(level, seed);
+export function replay(level: Level, seed: number, inputs: Int32Array, relic = 0): ReplayResult {
+  const s = createSim(level, seed, { relic });
   let outcome: ReplayResult['outcome'] = 'incomplete';
   for (let i = 0; i < inputs.length; i++) {
     step(s, level, unpackInput(inputs[i]));

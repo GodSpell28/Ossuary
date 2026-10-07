@@ -17,6 +17,8 @@ export interface VerifyDeps {
   chainId: number;
   game: Address;
   readRun(runId: bigint): Promise<RunInfo>;
+  /** How many of a relic type the player holds right now. */
+  readRelicBalance(player: Address, relicId: number): Promise<bigint>;
 }
 
 export class VerifyError extends Error {
@@ -35,7 +37,13 @@ function domain(d: VerifyDeps) {
   return { name: 'Ossuary', version: '1', chainId: d.chainId, verifyingContract: d.game } as const;
 }
 
-async function checkRun(d: VerifyDeps, runIdRaw: unknown, playerRaw: unknown, inputsRaw: unknown) {
+function parseRelic(raw: unknown): number {
+  const relicId = Number(raw ?? 0);
+  if (!Number.isInteger(relicId) || relicId < 0 || relicId > 6) throw new VerifyError('relicId must be 0-6');
+  return relicId;
+}
+
+async function checkRun(d: VerifyDeps, runIdRaw: unknown, playerRaw: unknown, inputsRaw: unknown, relicId: number) {
   if (typeof runIdRaw !== 'string' || !/^\d+$/.test(runIdRaw)) throw new VerifyError('runId must be a decimal string');
   if (typeof playerRaw !== 'string' || !isAddress(playerRaw)) throw new VerifyError('player must be an address');
   if (typeof inputsRaw !== 'string') throw new VerifyError('inputs must be base64');
@@ -53,8 +61,12 @@ async function checkRun(d: VerifyDeps, runIdRaw: unknown, playerRaw: unknown, in
     throw new VerifyError('inputs are not a valid log');
   }
   if (inputs.length === 0 || inputs.length > MAX_TICKS) throw new VerifyError('input log length out of range');
+  // A relic changes the simulation, so the claimed one must really be held.
+  if (relicId > 0 && (await d.readRelicBalance(player, relicId)) === 0n) {
+    throw new VerifyError(`player does not hold relic ${relicId}`, 403);
+  }
 
-  const result = replay(levelForDay(run.day), run.day, inputs);
+  const result = replay(levelForDay(run.day), run.day, inputs, relicId);
   const replayHash = keccak256(toHex(new Uint8Array(inputs.buffer, inputs.byteOffset, inputs.byteLength)));
   return { runId, player, run, result, replayHash };
 }
@@ -68,10 +80,9 @@ export function packEpitaph(text: unknown): Hex {
 }
 
 export async function verifyDeath(d: VerifyDeps, body: Record<string, unknown>) {
-  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs);
+  const relicId = parseRelic(body.relicId);
+  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs, relicId);
   if (result.outcome !== 'death') throw new VerifyError(`replay does not end in a death (${result.outcome})`, 422);
-  const relicId = Number(body.relicId ?? 0);
-  if (!Number.isInteger(relicId) || relicId < 0 || relicId > 6) throw new VerifyError('relicId must be 0-6');
   const epitaph = packEpitaph(body.epitaph);
   const tile = result.tile;
 
@@ -93,7 +104,8 @@ export async function verifyDeath(d: VerifyDeps, body: Record<string, unknown>) 
 }
 
 export async function verifyFinish(d: VerifyDeps, body: Record<string, unknown>) {
-  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs);
+  const relicId = parseRelic(body.relicId);
+  const { runId, player, result, replayHash } = await checkRun(d, body.runId, body.player, body.inputs, relicId);
   if (result.outcome !== 'finish') throw new VerifyError(`replay does not reach the exit (${result.outcome})`, 422);
   const { timeMs, kills } = result;
 
