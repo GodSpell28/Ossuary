@@ -58,7 +58,7 @@ console.log(`died at tick ${s.player.diedAt}, ${inputs.length} inputs`);
 
 // 3. Verifier replays and signs.
 const t0 = Date.now();
-const res = await fetch('http://localhost:8787/verify/death', {
+const res = await fetch(`${process.env.VERIFIER_URL ?? 'http://localhost:8787'}/verify/death`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
   body: JSON.stringify({ runId: runId.toString(), player, inputs: inputsToBase64(inputs), epitaph: 'e2e test: stood in the duct', relicId: 0 }),
