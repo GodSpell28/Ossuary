@@ -14,3 +14,5 @@ export const publicClient = createPublicClient({ chain: CHAIN, transport: http()
 
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`;
 export const addressUrl = (a: string) => `${EXPLORER}/address/${a}`;
+
+export const VERIFIER_URL = process.env.NEXT_PUBLIC_VERIFIER_URL || 'http://localhost:8787';

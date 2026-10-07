@@ -20,7 +20,7 @@ import {
   type SimState,
   type TickInput,
 } from '@ossuary/sim';
-import { EntityRenderer, WeaponView } from './entities';
+import { EntityRenderer, WeaponView, type GraveMarker } from './entities';
 import { InputCollector } from './input';
 import { buildDoorMeshes, buildLevelMesh, type LightSampler } from './levelMesh';
 import { LowResPipeline } from './lowres';
@@ -60,6 +60,8 @@ export interface EngineCallbacks {
   onStats(s: EngineStats): void;
   onHud(h: HudState): void;
   onEvent(e: SimEvent, s: SimState): void;
+  /** The first tick of a run is about to be simulated. */
+  onRunStart?(): void;
 }
 
 export class Engine {
@@ -175,6 +177,7 @@ export class Engine {
   debugRun(input: Partial<TickInput>, ticks: number): SimState {
     const inp: TickInput = { forward: 0, strafe: 0, turn: 0, buttons: 0, ...input };
     for (let i = 0; i < ticks; i++) {
+      if (this.sim.tick === 0) this.cb.onRunStart?.();
       this.prev = cloneSim(this.sim);
       if (!isOver(this.sim)) this.log.push(inp);
       step(this.sim, this.level, inp);
@@ -191,6 +194,18 @@ export class Engine {
 
   get state(): SimState {
     return this.sim;
+  }
+
+  get seedValue(): number {
+    return this.seed;
+  }
+
+  get levelData(): Level {
+    return this.level;
+  }
+
+  setGraves(graves: GraveMarker[]): void {
+    this.entities.setGraves(graves);
   }
 
   private resize(): void {
@@ -215,6 +230,7 @@ export class Engine {
       this.accumulator += dt;
       while (this.accumulator >= TICK_MS) {
         const over = isOver(this.sim);
+        if (this.sim.tick === 0) this.cb.onRunStart?.();
         const inp = this.input.sample();
         this.prev = cloneSim(this.sim);
         if (!over) this.log.push(inp);

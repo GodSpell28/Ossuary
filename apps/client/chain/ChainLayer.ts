@@ -5,8 +5,8 @@ import {
   type SmoothSendAvaxClient,
 } from '@smoothsend/sdk/avax';
 import { decodeEventLog, encodeFunctionData, type Address, type Hex, type WalletClient } from 'viem';
-import { ossuaryGameAbi } from './abi';
-import { GAME_ADDRESS, SMOOTHSEND_KEY, publicClient } from './config';
+import { ossuaryGameAbi, relicsAbi } from './abi';
+import { GAME_ADDRESS, RELICS_ADDRESS, SMOOTHSEND_KEY, publicClient } from './config';
 
 // Turns game actions into sponsored ERC-4337 operations. The engine never
 // waits on this: it fires actions and listens for status updates.
@@ -14,7 +14,10 @@ import { GAME_ADDRESS, SMOOTHSEND_KEY, publicClient } from './config';
 // Writes go through one serial queue because every operation from a smart
 // account is ordered by its EntryPoint nonce; two in flight would collide.
 
-export type TxState = 'queued' | 'sending' | 'confirmed' | 'failed';
+/** queued: waiting behind earlier writes. signing: building, signing and handing
+ * the UserOperation to SmoothSend. submitted: the bundler has it. confirmed:
+ * mined on Fuji. */
+export type TxState = 'queued' | 'signing' | 'submitted' | 'confirmed' | 'failed';
 
 export interface TxStatus {
   id: number;
@@ -28,6 +31,16 @@ export interface TxStatus {
 }
 
 type GameFn = 'startRun' | 'recordDeath' | 'finishRun' | 'lootGrave';
+
+export interface Grave {
+  id: bigint;
+  player: Address;
+  day: number;
+  tile: number;
+  relicId: number;
+  looted: boolean;
+  epitaph: Hex;
+}
 
 export class ChainLayer {
   private queue: Promise<unknown> = Promise.resolve();
@@ -67,6 +80,34 @@ export class ChainLayer {
   /** Reads today's day number from the contract, so client and chain agree. */
   async today(): Promise<number> {
     return Number(await publicClient.readContract({ address: game(), abi: ossuaryGameAbi, functionName: 'today' }));
+  }
+
+  /** Every grave dug on a day, oldest first. */
+  async graves(day: number): Promise<Grave[]> {
+    const out: Grave[] = [];
+    for (let offset = 0n; ; offset += 200n) {
+      const [ids, gs] = await publicClient.readContract({
+        address: game(),
+        abi: ossuaryGameAbi,
+        functionName: 'gravesOf',
+        args: [day, offset, 200n],
+      });
+      gs.forEach((g, i) => out.push({ id: ids[i], ...g }));
+      if (ids.length < 200) return out;
+    }
+  }
+
+  /** How many of each relic type (1-6) this player holds. */
+  async relics(): Promise<number[]> {
+    if (!RELICS_ADDRESS) return [0, 0, 0, 0, 0, 0];
+    const ids = [1n, 2n, 3n, 4n, 5n, 6n];
+    const bal = await publicClient.readContract({
+      address: RELICS_ADDRESS,
+      abi: relicsAbi,
+      functionName: 'balanceOfBatch',
+      args: [ids.map(() => this.smartAccount), ids],
+    });
+    return bal.map(Number);
   }
 
   async openRun(): Promise<bigint> {
@@ -110,17 +151,24 @@ export class ChainLayer {
     const status: TxStatus = { id: this.nextId++, label, state: 'queued', startedAt: Date.now() };
     this.emit(status);
     const run = async () => {
-      this.emit(Object.assign(status, { state: 'sending' as const }));
+      this.emit(Object.assign(status, { state: 'signing' as const }));
       try {
         const data = encodeFunctionData({ abi: ossuaryGameAbi, functionName, args } as never);
-        const res = await this.client.submitCall({
+        const sent = await this.client.submitCall({
           call: { to: game(), data },
           mode: 'developer-sponsored',
-          waitForReceipt: true,
+          waitForReceipt: false,
         });
-        const txHash = res.transactionHash ?? res.receipt?.receipt?.transactionHash;
-        if (!txHash) throw new Error(`No transaction hash for UserOp ${res.userOpHash}`);
-        if (res.receipt && res.receipt.success === false) throw new Error(`UserOp reverted (tx ${txHash})`);
+        this.emit(Object.assign(status, { state: 'submitted' as const, userOpHash: sent.userOpHash }));
+        // The SDK polls every 2 s by default; inclusion on Fuji takes about that long.
+        const receipt = await this.client.submitter.waitForUserOperationReceipt(sent.userOpHash, {
+          pollMs: 250,
+          timeoutMs: 60_000,
+        });
+        if (!receipt) throw new Error(`UserOp ${sent.userOpHash} not mined within 60 s`);
+        const res = { userOpHash: sent.userOpHash };
+        const txHash = receipt.receipt.transactionHash;
+        if (!receipt.success) throw new Error(`UserOp reverted (tx ${txHash})${receipt.reason ? `: ${receipt.reason}` : ''}`);
         this.emit(
           Object.assign(status, {
             state: 'confirmed' as const,

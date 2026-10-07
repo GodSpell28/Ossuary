@@ -82,6 +82,35 @@ export class EntityRenderer {
     this.sprites = paintSprites();
     for (const [k, img] of Object.entries(this.sprites.rusher)) this.textures[`rusher.${k}`] = toTexture(img);
     for (const [k, img] of Object.entries(this.sprites.pickups)) this.textures[`pickup.${k}`] = toTexture(img);
+    for (const [k, img] of Object.entries(this.sprites.graves)) this.textures[`grave.${k}`] = toTexture(img);
+  }
+
+  private graveMeshes: THREE.Mesh[] = [];
+
+  /** Shows graves from the chain. They are scenery: the sim never sees them. */
+  setGraves(graves: GraveMarker[]): void {
+    while (this.graveMeshes.length > graves.length) {
+      const m = this.graveMeshes.pop()!;
+      this.group.remove(m);
+      (m.material as THREE.Material).dispose();
+    }
+    while (this.graveMeshes.length < graves.length) this.graveMeshes.push(this.add('grave.full'));
+    // Several deaths on one tile fan out so each stone stays visible.
+    const perTile = new Map<number, number>();
+    graves.forEach((g, i) => {
+      const n = perTile.get(g.tile) ?? 0;
+      perTile.set(g.tile, n + 1);
+      const a = n * 2.4;
+      const r = n === 0 ? 0 : 0.18 + 0.04 * n;
+      const x = g.x + Math.cos(a) * r;
+      const y = g.y + Math.sin(a) * r;
+      const mesh = this.graveMeshes[i];
+      const mat = mesh.material as THREE.ShaderMaterial;
+      mat.uniforms.map.value = this.textures[`grave.${g.looted ? 'looted' : g.relic ? 'relic' : 'full'}`];
+      mesh.position.set(x, g.z, y);
+      mesh.scale.setScalar(0.8);
+      setLight(mat, this.light, x, y, g.own ? 0.08 : 0);
+    });
   }
 
   get pistolFrames(): ImageData[] {
@@ -116,6 +145,7 @@ export class EntityRenderer {
       mat.uniforms.map.value = this.textures[`rusher.${mobFrame(m.state, m.timer, cur.tick)}`];
       setLight(mat, this.light, x, y);
     });
+    for (const m of this.graveMeshes) m.rotation.y = yaw;
     cur.pickups.forEach((p, i) => {
       const mesh = this.pickupMeshes[i];
       mesh.visible = !p.taken;
@@ -135,6 +165,17 @@ export class EntityRenderer {
     Object.values(this.textures).forEach((t) => t.dispose());
     this.geometry.dispose();
   }
+}
+
+export interface GraveMarker {
+  /** Tile centre in tiles. */
+  x: number;
+  y: number;
+  z: number;
+  tile: number;
+  looted: boolean;
+  relic: boolean;
+  own: boolean;
 }
 
 function setLight(mat: THREE.ShaderMaterial, light: LightSampler, x: number, y: number, boost = 0): void {

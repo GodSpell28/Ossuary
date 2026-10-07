@@ -245,9 +245,61 @@ function pistol(firing: boolean): ImageData {
   });
 }
 
+function grave(state: 'full' | 'relic' | 'looted'): ImageData {
+  return draw(SPRITE_SIZE, SPRITE_SIZE, (c) => {
+    // Disturbed earth
+    ellipse(c, 32, 61, 18, 4, state === 'looted' ? '#2b1a10' : '#45291a');
+    if (state === 'looted') {
+      // Dug up: a dark pit and the stone knocked over.
+      ellipse(c, 30, 61, 11, 3, '#0a0908');
+      c.save();
+      c.translate(44, 58);
+      c.rotate(1.2);
+      c.fillStyle = '#554e46';
+      c.fillRect(-6, -10, 12, 16);
+      c.restore();
+      limb(c, [[16, 60], [24, 58]], 2, BONE_SHADE);
+      return;
+    }
+    // Headstone
+    c.fillStyle = '#6f665b';
+    c.beginPath();
+    c.moveTo(22, 60);
+    c.lineTo(22, 36);
+    c.quadraticCurveTo(32, 26, 42, 36);
+    c.lineTo(42, 60);
+    c.closePath();
+    c.fill();
+    c.fillStyle = '#8c8173';
+    c.fillRect(23, 37, 2, 22);
+    c.fillStyle = '#3d3833';
+    c.fillRect(30, 38, 4, 14);
+    c.fillRect(27, 42, 10, 3);
+    limb(c, [[38, 44], [35, 50], [39, 56]], 1, '#3d3833');
+    // Skull at its foot
+    ellipse(c, 17, 58, 5, 4, BONE);
+    ellipse(c, 15, 58, 1.3, 1.3, '#0a0908');
+    ellipse(c, 19, 58, 1.3, 1.3, '#0a0908');
+    if (state === 'relic') {
+      // The relic it holds, glinting above.
+      c.fillStyle = '#e0c060';
+      c.beginPath();
+      c.moveTo(32, 12);
+      c.lineTo(37, 18);
+      c.lineTo(32, 24);
+      c.lineTo(27, 18);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#ffffff';
+      c.fillRect(31, 15, 2, 2);
+    }
+  });
+}
+
 export interface SpriteSet {
   rusher: Record<string, ImageData>;
   pickups: Record<string, ImageData>;
+  graves: Record<string, ImageData>;
   pistol: ImageData[];
 }
 
@@ -270,6 +322,7 @@ export function paintSprites(): SpriteSet {
       key_red: pickup(keycard('#b8321e', '#e0c060')),
       key_blue: pickup(keycard('#36465e', '#7489a3')),
     },
+    graves: { full: grave('full'), relic: grave('relic'), looted: grave('looted') },
     pistol: [pistol(false), pistol(true)],
   };
 }

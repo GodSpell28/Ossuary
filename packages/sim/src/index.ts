@@ -6,3 +6,4 @@ export * from './level';
 export * from './input';
 export * from './sim';
 export { provingGrounds } from './levels/proving';
+export * from './replay';

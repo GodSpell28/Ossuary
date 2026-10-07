@@ -2,7 +2,11 @@
 
 import { KEY_BITS, dayNumber, type SimEvent } from '@ossuary/sim';
 import { useEffect, useRef, useState } from 'react';
+import type { ChainLayer } from '@/chain/ChainLayer';
+import { RunController } from '@/chain/RunController';
+import { addressUrl } from '@/chain/config';
 import { Engine, type EngineStats, type HudState } from './engine';
+import TxToasts from './TxToasts';
 
 const PICKUP_TEXT: Record<string, string> = {
   health: 'Bone salve. +25 health',
@@ -17,9 +21,13 @@ function formatTime(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function Game() {
+export default function Game({ layer, account }: { layer: ChainLayer | null; account?: React.ReactNode }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
+  const controllerRef = useRef<RunController | null>(null);
+  const sayRef = useRef<(text: string) => void>(() => {});
+  const [engineReady, setEngineReady] = useState(false);
+  const [graveCount, setGraveCount] = useState<number | null>(null);
   const [stats, setStats] = useState<EngineStats | null>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [message, setMessage] = useState<{ text: string; id: number } | null>(null);
@@ -30,8 +38,10 @@ export default function Game() {
     if (!mount) return;
     let msgId = 0;
     const say = (text: string) => setMessage({ text, id: ++msgId });
+    sayRef.current = say;
     const blink = (color: string) => setFlash({ color, id: ++msgId });
     const onEvent = (e: SimEvent) => {
+      controllerRef.current?.onEvent(e);
       switch (e.type) {
         case 'pickup':
           say(PICKUP_TEXT[e.kind] ?? e.kind);
@@ -48,9 +58,14 @@ export default function Game() {
           break;
       }
     };
-    const engine = new Engine(mount, { onStats: setStats, onHud: setHud, onEvent }, dayNumber(Date.now()));
+    const engine = new Engine(
+      mount,
+      { onStats: setStats, onHud: setHud, onEvent, onRunStart: () => controllerRef.current?.onRunStart() },
+      dayNumber(Date.now()),
+    );
     engineRef.current = engine;
     engine.start();
+    setEngineReady(true);
     if (process.env.NODE_ENV !== 'production') (window as unknown as { __ossuary?: Engine }).__ossuary = engine;
 
     const onKey = (e: KeyboardEvent) => {
@@ -66,10 +81,26 @@ export default function Game() {
     };
   }, []);
 
+  // Connect the engine to the chain once the player's smart account is ready.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !layer) return;
+    const c = new RunController(engine, layer, {
+      message: (t) => sayRef.current(t),
+      graves: setGraveCount,
+    });
+    controllerRef.current = c;
+    c.start().catch((e) => sayRef.current(`Chain: ${e instanceof Error ? e.message : e}`));
+    return () => {
+      c.dispose();
+      controllerRef.current = null;
+    };
+  }, [layer, engineReady]);
+
   // Messages fade after a few seconds.
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(() => setMessage((m) => (m?.id === message.id ? null : m)), 2500);
+    const t = setTimeout(() => setMessage((m) => (m?.id === message.id ? null : m)), 3500);
     return () => clearTimeout(t);
   }, [message]);
 
@@ -132,6 +163,17 @@ export default function Game() {
 
           {hud.phase === 'playing' && hud.locked && <div style={crosshair} />}
 
+          {layer && <TxToasts layer={layer} />}
+          {layer && (!hud.locked || hud.phase !== 'playing') && (
+            <div style={{ position: 'absolute', top: 26, left: 8, fontSize: 11, color: '#8a7f70' }}>
+              smart account{' '}
+              <a href={addressUrl(layer.smartAccount)} target="_blank" rel="noreferrer" style={{ color: '#aa9e8c' }}>
+                {layer.smartAccount.slice(0, 8)}…{layer.smartAccount.slice(-4)}
+              </a>
+              {graveCount !== null && ` · ${graveCount} grave${graveCount === 1 ? '' : 's'} today`}
+            </div>
+          )}
+
           {hud.phase !== 'playing' && (
             <div style={endScreen}>
               <div style={{ fontSize: 'clamp(28px, 6vw, 56px)', letterSpacing: '0.2em', color: hud.phase === 'dead' ? '#b8321e' : '#e0c060' }}>
@@ -150,13 +192,20 @@ export default function Game() {
           )}
 
           {hud.phase === 'playing' && !hud.locked && (
-            <button onClick={() => engineRef.current?.requestLock()} style={{ ...button, ...centered }}>
-              CLICK TO DESCEND
-              <br />
-              <span style={{ fontSize: 12, color: '#8a7f70', letterSpacing: 0 }}>
-                WASD move · mouse look · click fire · E open · Esc release
-              </span>
-            </button>
+            <div style={{ ...centered, textAlign: 'center' }}>
+              <button onClick={() => engineRef.current?.requestLock()} style={{ ...button, width: '100%' }}>
+                CLICK TO DESCEND
+                <br />
+                <span style={{ fontSize: 12, color: '#8a7f70', letterSpacing: 0 }}>
+                  WASD move · mouse look · click fire · E open · Esc release
+                </span>
+              </button>
+              {account && (
+                <div style={{ marginTop: 12, fontSize: 13, color: '#aa9e8c', background: 'rgba(7,6,10,0.8)', padding: 10 }}>
+                  {account}
+                </div>
+              )}
+            </div>
           )}
         </>
       )}
