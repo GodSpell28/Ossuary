@@ -14,3 +14,7 @@ packages/contracts/broadcast/*/31337/
 packages/contracts/artifacts/
 packages/contracts/cache/
 packages/contracts/types/
+
+# load test: owner keys and progress logs stay local
+apps/verifier/.load-test-wallets.*.json
+apps/verifier/load-test-log.*.jsonl

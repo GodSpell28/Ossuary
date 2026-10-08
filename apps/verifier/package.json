@@ -12,7 +12,8 @@
     "state": "tsx scripts/state.ts",
     "events": "tsx scripts/events.ts",
     "e2e:loot": "tsx scripts/e2e-loot.ts",
-    "bot-search": "tsx scripts/bot-search.ts"
+    "bot-search": "tsx scripts/bot-search.ts",
+    "load-test": "tsx scripts/load-test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",

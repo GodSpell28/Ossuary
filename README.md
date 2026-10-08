@@ -63,6 +63,25 @@ browser                                          Avalanche Fuji
 
 The game engine knows nothing about wallets. It emits events, and the chain layer turns them into sponsored operations, one at a time, ordered by the smart account's nonce. On death, the client posts its input log to the verifier. The verifier replays it through the same simulation code with the day as the seed and the carried relic applied. It then signs the tile where the replay died, so the client's claims are never trusted.
 
+## Load test (disclosed)
+
+To show the gasless pipeline holding up at volume, we ran an automated load test on Avalanche C-Chain mainnet on 2026-10-08. A pool of 30 bot wallets played The Charnel Descent with the built-in bot (`packages/sim/src/bot.ts`), making **401 transactions**:
+
+| Action | Count |
+| --- | --- |
+| `startRun` | 214 |
+| `recordDeath` | 183 |
+| `finishRun` | 4 escapes, each minting a relic |
+
+Every result was replayed and signed by the same verifier that checks human players. Every operation was sponsored through SmoothSend, so the bot wallets never held AVAX.
+
+The bots are labelled, not disguised as players:
+- their epitaphs read `[load test]`;
+- their smart-account addresses are published in [`apps/client/chain/loadTestWallets.json`](apps/client/chain/loadTestWallets.json);
+- the leaderboard leaves them out of the ranking unless a viewer chooses "show bots".
+
+Script: [`apps/verifier/scripts/load-test.ts`](apps/verifier/scripts/load-test.ts).
+
 ## Repository
 
 ```

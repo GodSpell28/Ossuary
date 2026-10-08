@@ -49,6 +49,25 @@ Verifier: https://ossuaryverifier-production.up.railway.app
   - one player dies carrying Relic #6, which goes into grave #7: https://testnet.snowtrace.io/tx/0xf0673c755768d123dd8fc1bbb86153031257007db0956d3c3cc64bf730570867
   - another player loots it: https://testnet.snowtrace.io/tx/0x8d51b4738852fb0b83b5ddfe66d886f6a6bf57f0b04ae320c2ccf2af1394d5f7
 
+## Load test (disclosed)
+
+To show the gasless pipeline holding up at volume, we ran an automated load test on Avalanche C-Chain mainnet on 2026-10-08. A pool of 30 bot wallets played The Charnel Descent with the built-in bot (`packages/sim/src/bot.ts`), making **401 transactions**:
+
+| Action | Count |
+| --- | --- |
+| `startRun` | 214 |
+| `recordDeath` | 183 |
+| `finishRun` | 4 escapes, each minting a relic |
+
+Every result was replayed and signed by the same verifier that checks human players. Every operation was sponsored through SmoothSend, so the bot wallets never held AVAX.
+
+The bots are labelled, not disguised as players:
+- their epitaphs read `[load test]`;
+- their smart-account addresses are published in [`apps/client/chain/loadTestWallets.json`](https://github.com/GodSpell28/Ossuary/blob/main/apps/client/chain/loadTestWallets.json);
+- the leaderboard leaves them out of the ranking unless a viewer chooses "show bots".
+
+Script: [`apps/verifier/scripts/load-test.ts`](https://github.com/GodSpell28/Ossuary/blob/main/apps/verifier/scripts/load-test.ts).
+
 ## GitHub
 
 https://github.com/GodSpell28/Ossuary. Setup steps are in the README; the transaction walk-through is in `docs/TRANSACTIONS.md`.

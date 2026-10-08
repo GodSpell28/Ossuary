@@ -2,8 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { addressUrl, txUrl } from '@/chain/config';
+import { NETWORK, addressUrl, txUrl } from '@/chain/config';
+import loadTestWallets from '@/chain/loadTestWallets.json';
 import { fetchLeaderboard, fetchToday, type LeaderboardRow } from '@/chain/reads';
+
+// Bot wallets from the disclosed load test (apps/verifier/scripts/load-test.ts).
+// They stay out of the ranking unless the viewer asks to see them.
+const BOTS = new Set(((loadTestWallets as Record<string, string[]>)[NETWORK] ?? []).map((a) => a.toLowerCase()));
 
 function formatTime(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -18,6 +23,7 @@ export default function Leaderboard() {
   const [day, setDay] = useState<number | null>(null);
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showBots, setShowBots] = useState(false);
 
   useEffect(() => {
     fetchToday()
@@ -38,7 +44,7 @@ export default function Leaderboard() {
       <h1 style={{ letterSpacing: '0.2em', color: 'var(--bone)', marginBottom: 4 }}>LEADERBOARD</h1>
       <p style={{ color: 'var(--dim)', marginTop: 0 }}>
         Fastest verified escapes from The Charnel Descent. Every time here was replayed by the verifier and recorded
-        on Avalanche Fuji.
+        on Avalanche{NETWORK === 'fuji' ? ' Fuji' : ''}.
       </p>
       {day !== null && (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '12px 0' }}>
@@ -52,9 +58,20 @@ export default function Leaderboard() {
         </div>
       )}
       {error && <p style={{ color: '#e06040' }}>{error}</p>}
-      {!error && rows === null && <p style={{ color: 'var(--dim)' }}>Reading RunFinished events from Fuji…</p>}
-      {rows && rows.length === 0 && <p style={{ color: 'var(--dim)' }}>Nobody has escaped yet on this day.</p>}
-      {rows && rows.length > 0 && (
+      {!error && rows === null && <p style={{ color: 'var(--dim)' }}>Reading RunFinished events from Avalanche{NETWORK === 'fuji' ? ' Fuji' : ''}…</p>}
+      {rows && (() => {
+        const bots = rows.filter((r) => BOTS.has(r.player.toLowerCase())).length;
+        return bots > 0 ? (
+          <p style={{ color: 'var(--dim)', fontSize: 14 }}>
+            {bots} load-test bot{bots === 1 ? '' : 's'} {showBots ? 'shown, marked “bot”' : 'hidden'} ·{' '}
+            <button style={navBtn} onClick={() => setShowBots(!showBots)}>
+              {showBots ? 'hide bots' : 'show bots'}
+            </button>
+          </p>
+        ) : null;
+      })()}
+      {rows && visible(rows, showBots).length === 0 && <p style={{ color: 'var(--dim)' }}>Nobody has escaped yet on this day.</p>}
+      {rows && visible(rows, showBots).length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
@@ -67,13 +84,14 @@ export default function Leaderboard() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {visible(rows, showBots).map((r, i) => (
                 <tr key={r.player} style={{ borderTop: '1px solid #2a2622', color: i === 0 ? '#e0c060' : undefined }}>
                   <td style={cell}>{i + 1}</td>
                   <td style={cell}>
                     <a href={addressUrl(r.player)} target="_blank" rel="noreferrer">
                       {r.player.slice(0, 6)}…{r.player.slice(-4)}
                     </a>
+                    {BOTS.has(r.player.toLowerCase()) && <span style={{ color: 'var(--dim)' }}> bot</span>}
                   </td>
                   <td style={cell}>{formatTime(r.timeMs)}</td>
                   <td style={cell}>{r.kills}</td>
@@ -93,6 +111,10 @@ export default function Leaderboard() {
       </p>
     </main>
   );
+}
+
+function visible(rows: LeaderboardRow[], showBots: boolean): LeaderboardRow[] {
+  return showBots ? rows : rows.filter((r) => !BOTS.has(r.player.toLowerCase()));
 }
 
 const cell: React.CSSProperties = { padding: '6px 8px', whiteSpace: 'nowrap' };
