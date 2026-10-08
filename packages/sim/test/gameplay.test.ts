@@ -9,6 +9,7 @@ import {
   hashSim,
   parseLevel,
   step,
+  useTarget,
   type LevelDef,
   type SimEvent,
   type SimState,
@@ -167,5 +168,19 @@ describe('determinism with combat', () => {
     };
     const a = go();
     expect(go()).toEqual(a);
+  });
+});
+
+describe('use target', () => {
+  it('reports the door ahead without changing anything', () => {
+    const level = map(['#######', '#P.D..#', '#######']);
+    const s = createSim(level, 1);
+    expect(useTarget(s, level)).toBe(-1); // two tiles away
+    run(s, level, fwd, 60);
+    const before = hashSim(s);
+    expect(useTarget(s, level)).toBe(0);
+    expect(hashSim(s)).toBe(before);
+    s.player.angle = 2048; // face away
+    expect(useTarget(s, level)).toBe(-1);
   });
 });

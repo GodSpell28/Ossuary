@@ -1,4 +1,4 @@
-import { ONE, SIM_FINGERPRINT, inputsToBase64, type SimEvent } from '@ossuary/sim';
+import { ONE, RELICS, SIM_FINGERPRINT, inputsToBase64, type SimEvent } from '@ossuary/sim';
 import { hexToString, type Hex } from 'viem';
 import type { Engine } from '@/game/engine';
 import type { GraveMarker } from '@/game/entities';
@@ -29,7 +29,8 @@ const EPITAPHS = [
   'tell them i ran',
 ];
 
-const LOOT_RADIUS = 0.55;
+/** How close, in tiles, the player must stand to a grave to work it. */
+const LOOT_RADIUS = 0.8;
 const GRAVE_POLL_MS = 20_000;
 
 export interface RunControllerEvents {
@@ -37,6 +38,8 @@ export interface RunControllerEvents {
   graves(count: number): void;
   /** The run ended in death and an epitaph can be carved (or null once done). */
   epitaph(defaultText: string | null): void;
+  /** What pressing E at a grave would do, or null when not at one. */
+  prompt(p: { action: string; button?: string } | null): void;
 }
 
 /** Seconds to wait for a typed epitaph before carving the default. */
@@ -51,6 +54,9 @@ export class RunController {
   private graves: Grave[] = [];
   private looting = new Set<bigint>();
   private shownEpitaph: bigint | null = null;
+  /** The grave pressing E would loot right now. */
+  private lootTarget: Grave | null = null;
+  private lastPrompt = '';
   private timers: ReturnType<typeof setInterval>[] = [];
   private carveNow: ((text: string) => void) | null = null;
   private disposed = false;
@@ -237,7 +243,34 @@ export class RunController {
     this.ui.graves(this.graves.length);
   }
 
-  /** Shows epitaphs as the player passes graves, and loots relics. */
+  /** Takes the relic from the grave the player is standing at, if any. Bound to E. */
+  lootNearby(): void {
+    const g = this.lootTarget;
+    if (!g || this.looting.has(g.id)) return;
+    this.looting.add(g.id);
+    this.lootTarget = null;
+    this.setPrompt(null);
+    this.ui.message('You pry the relic from the grave…');
+    this.layer
+      .lootGrave(g.id)
+      .then(() => {
+        this.ui.message(`${RELICS[g.relicId]?.name ?? `Relic ${g.relicId}`} is yours`);
+        return this.refreshGraves();
+      })
+      .catch((e) => {
+        this.looting.delete(g.id);
+        this.ui.message(`Loot failed: ${short(e)}`);
+      });
+  }
+
+  private setPrompt(p: { action: string; button?: string } | null): void {
+    const key = JSON.stringify(p);
+    if (key === this.lastPrompt) return;
+    this.lastPrompt = key;
+    this.ui.prompt(p);
+  }
+
+  /** Shows epitaphs as the player passes graves, and what E would do at one. */
   private checkGraves(): void {
     const s = this.engine.state;
     const level = this.engine.levelData;
@@ -255,6 +288,8 @@ export class RunController {
     }
     if (!nearest) {
       this.shownEpitaph = null;
+      this.lootTarget = null;
+      this.setPrompt(null);
       return;
     }
     if (this.shownEpitaph !== nearest.id) {
@@ -262,25 +297,20 @@ export class RunController {
       const who = nearest.player.toLowerCase() === me ? 'you' : `${nearest.player.slice(0, 6)}…${nearest.player.slice(-4)}`;
       this.ui.message(`Here lies ${who}: “${hexToString(nearest.epitaph, { size: 32 })}”`);
     }
-    const lootable =
-      this.runOpen &&
-      s.player.diedAt < 0 &&
-      best < LOOT_RADIUS &&
-      !nearest.looted &&
-      nearest.relicId > 0 &&
-      nearest.player.toLowerCase() !== me &&
-      !this.looting.has(nearest.id);
-    if (lootable) {
-      const g = nearest;
-      this.looting.add(g.id);
-      this.ui.message('You pry the relic from the grave…');
-      this.layer
-        .lootGrave(g.id)
-        .then(() => {
-          this.ui.message(`Relic ${g.relicId} taken`);
-          return this.refreshGraves();
-        })
-        .catch((e) => this.ui.message(`Loot failed: ${short(e)}`));
+    this.lootTarget = null;
+    if (best >= LOOT_RADIUS || s.player.diedAt >= 0 || s.finishedAt >= 0) {
+      this.setPrompt(null);
+      return;
+    }
+    const relic = RELICS[nearest.relicId]?.name;
+    if (nearest.player.toLowerCase() === me) this.setPrompt({ action: 'Your own grave' });
+    else if (this.looting.has(nearest.id)) this.setPrompt({ action: 'Prying the relic loose…' });
+    else if (nearest.looted) this.setPrompt({ action: 'Already looted' });
+    else if (!relic) this.setPrompt({ action: 'Nothing was buried here' });
+    else if (!this.runOpen) this.setPrompt({ action: `${relic} lies here. Waiting for your run to open on-chain…` });
+    else {
+      this.lootTarget = nearest;
+      this.setPrompt({ action: `Take the ${relic}`, button: 'E' });
     }
   }
 }

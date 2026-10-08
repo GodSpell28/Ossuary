@@ -11,8 +11,11 @@ import {
   createSim,
   hashSim,
   hex32,
+  DoorPhase,
+  KEY_BITS,
   WEAPONS,
   ammoFor,
+  useTarget,
   isOver,
   levelForDay,
   step,
@@ -60,6 +63,8 @@ export interface HudState {
   phase: 'playing' | 'dead' | 'escaped';
   /** Run time in ms (from ticks, not the wall clock). */
   timeMs: number;
+  /** What pressing E would do right now, e.g. "Open door", or null. */
+  prompt: { action: string; button?: string } | null;
 }
 
 export interface EngineCallbacks {
@@ -320,6 +325,7 @@ export class Engine {
       totalMobs: s.mobs.length,
       phase: p.diedAt >= 0 ? 'dead' : s.finishedAt >= 0 ? 'escaped' : 'playing',
       timeMs: Math.floor((end * 1000) / TICK_RATE),
+      prompt: this.doorPrompt(),
     };
     // Only re-render React when something visible changed (time in whole seconds).
     const key = JSON.stringify({ ...hud, timeMs: Math.floor(hud.timeMs / 1000) });
@@ -327,6 +333,20 @@ export class Engine {
       this.lastHud = key;
       this.cb.onHud(hud);
     }
+  }
+
+  private doorPrompt(): HudState['prompt'] {
+    const s = this.sim;
+    if (isOver(s)) return null;
+    const d = useTarget(s, this.level);
+    if (d < 0) return null;
+    const def = this.level.doors[d];
+    if (def.key && !(s.player.keys & KEY_BITS[def.key])) return { action: `Locked: needs the ${def.key} keycard` };
+    const phase = s.doors[d].phase;
+    if (phase === DoorPhase.Closed || phase === DoorPhase.Closing) {
+      return { action: def.key ? `Open the ${def.key} door` : 'Open door', button: 'E' };
+    }
+    return null;
   }
 
   private placeCamera(alpha: number, dtSec: number): void {

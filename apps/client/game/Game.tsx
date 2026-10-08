@@ -41,6 +41,7 @@ export default function Game({ layer, account }: { layer: ChainLayer | null; acc
   const [epitaph, setEpitaph] = useState<string | null>(null);
   const [held, setHeld] = useState<number[]>([]);
   const [relic, setRelic] = useState(0);
+  const [gravePrompt, setGravePrompt] = useState<{ action: string; button?: string } | null>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -92,7 +93,9 @@ export default function Game({ layer, account }: { layer: ChainLayer | null; acc
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'KeyR' || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.code === 'KeyE' && !e.repeat) controllerRef.current?.lootNearby();
+      if (e.code !== 'KeyR') return;
       const s = engine.state;
       if (s.player.diedAt >= 0 || s.finishedAt >= 0) {
         controllerRef.current?.carve('');
@@ -118,6 +121,7 @@ export default function Game({ layer, account }: { layer: ChainLayer | null; acc
       message: (t) => sayRef.current(t),
       graves: setGraveCount,
       epitaph: setEpitaph,
+      prompt: setGravePrompt,
     });
     controllerRef.current = c;
     c.start().catch((e) => sayRef.current(`Chain: ${e instanceof Error ? e.message : e}`));
@@ -234,6 +238,10 @@ export default function Game({ layer, account }: { layer: ChainLayer | null; acc
 
           {hud.phase === 'playing' && hud.locked && <div style={crosshair} />}
 
+          {hud.phase === 'playing' && (hud.prompt ?? gravePrompt) && (
+            <Prompt {...(hud.prompt ?? gravePrompt)!} />
+          )}
+
           {layer && <TxToasts layer={layer} />}
           {layer && (!hud.locked || hud.phase !== 'playing') && (
             <div style={{ position: 'absolute', top: 26, left: 8, fontSize: 11, color: '#8a7f70' }}>
@@ -347,6 +355,49 @@ export default function Game({ layer, account }: { layer: ChainLayer | null; acc
       )}
 
       <style>{`@keyframes ossuary-fade { from { opacity: 1 } to { opacity: 0 } }`}</style>
+    </div>
+  );
+}
+
+/** "[E] Open door" style hint for whatever the player can interact with. */
+function Prompt({ action, button: keyLabel }: { action: string; button?: string }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: '62%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 14px',
+        background: 'rgba(7,6,10,0.78)',
+        border: `1px solid ${keyLabel ? '#e0c060' : '#3d3833'}`,
+        color: keyLabel ? '#e8dcc8' : '#aa9e8c',
+        fontSize: 15,
+        letterSpacing: '0.04em',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+        maxWidth: 'calc(100% - 32px)',
+      }}
+    >
+      {keyLabel && (
+        <span
+          style={{
+            display: 'inline-block',
+            minWidth: 24,
+            padding: '1px 6px',
+            border: '2px solid #e0c060',
+            color: '#e0c060',
+            textAlign: 'center',
+            fontWeight: 700,
+          }}
+        >
+          {keyLabel}
+        </span>
+      )}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{action}</span>
     </div>
   );
 }

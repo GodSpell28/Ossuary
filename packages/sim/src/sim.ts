@@ -505,17 +505,28 @@ function damagePlayer(s: SimState, level: Level, amount: number): void {
   }
 }
 
-function useLine(s: SimState, level: Level): void {
+/**
+ * The door the player would work by pressing use right now, or -1. Read-only,
+ * so the HUD can show a prompt without touching the simulation.
+ */
+export function useTarget(s: SimState, level: Level): number {
   const p = s.player;
   const c = fcos(p.angle);
   const sn = fsin(p.angle);
   // Probe a short way ahead, then a little further, for a door tile.
   for (const reach of [PLAYER_RADIUS + units(8), PLAYER_RADIUS + USE_REACH]) {
     const t = tileIndex(level, (p.x + Math.floor((c * reach) / ONE)) >> 16, (p.y + Math.floor((sn * reach) / ONE)) >> 16);
-    if (t < 0) return;
-    if (level.solid[t]) return;
+    if (t < 0 || level.solid[t]) return -1;
     const d = level.doorOf[t];
-    if (d < 0) continue;
+    if (d >= 0) return d;
+  }
+  return -1;
+}
+
+function useLine(s: SimState, level: Level): void {
+  const p = s.player;
+  const d = useTarget(s, level);
+  if (d >= 0) {
     const def = level.doors[d];
     if (def.key && !(p.keys & KEY_BITS[def.key])) {
       s.events.push({ type: 'locked', door: d });
@@ -526,7 +537,6 @@ function useLine(s: SimState, level: Level): void {
       door.phase = DoorPhase.Opening;
       s.events.push({ type: 'door', door: d, opening: true });
     }
-    return;
   }
 }
 
