@@ -52,7 +52,7 @@ Then open the Vercel URL in a private window on another machine and play a run t
 - Relics `0x6c56140d5a99d20a4b42953f48f2114f52ed25e2`
 - deploy block 97047457; addresses recorded in `packages/contracts/deployments/avalanche.json`
 
-Steps 1–4 below are done. What's left to make mainnet *playable* is the SmoothSend credit (step 3) and step 5.
+Steps 2 and 4 below are done. To make mainnet *playable*, steps 1, 3 and 5 remain: rotate the key, add SmoothSend credit, and run a mainnet client and verifier.
 
 1. **Rotate the SmoothSend secret key** in the dashboard first; the old one was pasted in chat.
 2. Fund the mainnet deployer `0x5482EeC17e9514cBb4D3B0E6A45577ff2636Ff46` with about 0.1 AVAX on C-Chain. The deploy costs a few cents; keep the rest small. Its key is `MAINNET_DEPLOYER_PRIVATE_KEY` in `packages/contracts/.env`.
