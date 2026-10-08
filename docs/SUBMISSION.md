@@ -20,7 +20,7 @@ A Doom 64-style browser FPS where every death becomes a grave on Avalanche, for 
 
 ## Tech stack (Avalanche-specific parts in bold)
 
-- **Avalanche C-Chain (Fuji testnet; mainnet deploy script ready).** Two contracts: `OssuaryGame` (runs, graves, loot, best times) and `Relics` (ERC-1155 that only the game contract can mint or burn).
+- **Avalanche C-Chain: the live game runs on Fuji; the contracts are also deployed and verified on mainnet.** Two contracts: `OssuaryGame` (runs, graves, loot, best times) and `Relics` (ERC-1155 that only the game contract can mint or burn).
 - **Gasless play via ERC-4337 on C-Chain through SmoothSend** (`@smoothsend/sdk/avax`, developer-sponsored mode). Each player gets a SimpleAccount owned by their Privy embedded wallet. Every game write is a sponsored UserOperation. Fuji's fast finality means a grave written on death is visible to others within seconds.
 - **EIP-712 verifier signatures bound to the chain ID and contract.** A Hono service replays the input log through the same deterministic simulation the browser ran, then signs the death tile, or the finish time and kill count, taken from the replay.
 - Privy (email login, embedded wallets with wallet UIs disabled), viem, Hardhat 3, OpenZeppelin 5.
@@ -31,6 +31,12 @@ A Doom 64-style browser FPS where every death becomes a grave on Avalanche, for 
 https://ossuarydoom64.vercel.app (leaderboard: https://ossuarydoom64.vercel.app/leaderboard)
 
 Verifier: https://ossuaryverifier-production.up.railway.app
+
+## Contracts (Avalanche mainnet)
+
+- OssuaryGame: https://snowtrace.io/address/0xbb760a0bbcf4f2c68894ec96c667547a84818b12
+- Relics: https://snowtrace.io/address/0x6c56140d5a99d20a4b42953f48f2114f52ed25e2
+- Linked to each other and to the same verifier key, with source verified on Sourcify (chain 43114). Deployed for about 0.021 AVAX.
 
 ## Contracts (Fuji)
 

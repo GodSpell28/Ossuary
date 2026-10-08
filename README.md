@@ -17,6 +17,13 @@ Built for **Team1 India Speedrun: Build Anything on Avalanche**. All code, level
 | OssuaryGame | `0x2e8c113ff52cc3bbb9748f64c589cf1a0a55b65f` | [Snowtrace](https://testnet.snowtrace.io/address/0x2e8c113ff52cc3bbb9748f64c589cf1a0a55b65f) · [source](https://sourcify.dev/server/repo-ui/43113/0x2e8c113ff52cc3bbb9748f64c589cf1a0a55b65f) |
 | Relics (ERC-1155) | `0x61393d01bc79756ff3dcc63c380e717d6acc1e9d` | [Snowtrace](https://testnet.snowtrace.io/address/0x61393d01bc79756ff3dcc63c380e717d6acc1e9d) · [source](https://sourcify.dev/server/repo-ui/43113/0x61393d01bc79756ff3dcc63c380e717d6acc1e9d) |
 
+Also deployed on **Avalanche C-Chain mainnet**, with verified source:
+
+| Contract | Address | |
+| --- | --- | --- |
+| OssuaryGame | `0xbb760a0bbcf4f2c68894ec96c667547a84818b12` | [Snowtrace](https://snowtrace.io/address/0xbb760a0bbcf4f2c68894ec96c667547a84818b12) · [source](https://sourcify.dev/server/repo-ui/43114/0xbb760a0bbcf4f2c68894ec96c667547a84818b12) |
+| Relics (ERC-1155) | `0x6c56140d5a99d20a4b42953f48f2114f52ed25e2` | [Snowtrace](https://snowtrace.io/address/0x6c56140d5a99d20a4b42953f48f2114f52ed25e2) · [source](https://sourcify.dev/server/repo-ui/43114/0x6c56140d5a99d20a4b42953f48f2114f52ed25e2) |
+
 The contracts track:
 - **runs:** who, which day, open or closed
 - **graves:** player, day, tile, 32-byte epitaph, buried relic, looted flag
