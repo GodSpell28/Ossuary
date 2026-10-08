@@ -28,7 +28,9 @@ A Doom 64-style browser FPS where every death becomes a grave on Avalanche, for 
 
 ## Live link
 
-**TODO:** the Vercel URL, once deployed (see `docs/DEPLOY.md`).
+https://ossuarydoom64.vercel.app (leaderboard: https://ossuarydoom64.vercel.app/leaderboard)
+
+Verifier: https://ossuaryverifier-production.up.railway.app
 
 ## Contracts (Fuji)
 
@@ -36,7 +38,10 @@ A Doom 64-style browser FPS where every death becomes a grave on Avalanche, for 
 - Relics: https://testnet.snowtrace.io/address/0x61393d01bc79756ff3dcc63c380e717d6acc1e9d
 - Both have verified source (Sourcify, also shown on Snowtrace).
 - Example sponsored write, the first run started by a real player: https://testnet.snowtrace.io/tx/0x6bd35549c74f5a6aa7e29f9f3316651b435d3dc49744a6c60b3e2d5176abdcdc
-- Example verified escape (42.3 s, 5 kills, Relic #4 minted): https://testnet.snowtrace.io/tx/0x078b8b0daf8a10dc6d72b40442274dc91100cc44dcd72b91fcec25c700a6fb45
+- Example verified escape on the final level (1:29.9, 21/21 kills, Relic #1 minted): https://testnet.snowtrace.io/tx/0x2ae6c133c81088fe0dc8553080a759390bb88685dc192958e0041d740b760ee0
+- The full loot flow:
+  - one player dies carrying Relic #6, which goes into grave #7: https://testnet.snowtrace.io/tx/0xf0673c755768d123dd8fc1bbb86153031257007db0956d3c3cc64bf730570867
+  - another player loots it: https://testnet.snowtrace.io/tx/0x8d51b4738852fb0b83b5ddfe66d886f6a6bf57f0b04ae320c2ccf2af1394d5f7
 
 ## GitHub
 

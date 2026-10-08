@@ -70,6 +70,18 @@ The signature is bound to the run ID, the player, the chain ID and the game cont
   - each grave can be looted only once
   - you need an open run on that day
 
+## The loot flow, end to end
+
+Run by `pnpm --filter @ossuary/verifier e2e:loot` against the production verifier on Railway, with two throwaway players. Player A's escape uses inputs from the built-in bot (`packages/sim/src/bot.ts`). The verifier replays them like any other run.
+
+| Step | Transaction |
+| --- | --- |
+| A escapes in 1:22.1 with 23/23 kills; the verifier signs and `finishRun` mints A Relic #6 | [0xedac…5fb8](https://testnet.snowtrace.io/tx/0xedac83bb10bb7e2e3c48eb1026ed2e82e67810ae83bc661f955c1fd8e1805fb8) |
+| A descends again carrying Relic #6 and dies. The verifier replays with the relic applied, and `recordDeath` burns it from A into grave #7 | [0xf067…0867](https://testnet.snowtrace.io/tx/0xf0673c755768d123dd8fc1bbb86153031257007db0956d3c3cc64bf730570867) |
+| B opens a run and calls `lootGrave(7)`. The grave is marked looted and Relic #6 is minted to B | [0x8d51…d5f7](https://testnet.snowtrace.io/tx/0x8d51b4738852fb0b83b5ddfe66d886f6a6bf57f0b04ae320c2ccf2af1394d5f7) |
+
+In the game, a player standing at someone else's grave that holds a relic sees "[E] Take the <relic>", and looting happens only when they press E.
+
 ## Ordering
 
 A smart account's operations are ordered by its EntryPoint nonce, so `ChainLayer` sends writes one at a time through a queue. `RunController` also holds the next run's `startRun` until the previous `recordDeath` lands. Starting a run abandons any open one, so a death that landed late would be rejected.

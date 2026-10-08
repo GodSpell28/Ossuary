@@ -10,3 +10,4 @@ export { charnelDescent } from './levels/charnel';
 export * from './replay';
 export * from './scripted';
 export * from './version';
+export * from './bot';

@@ -6,6 +6,8 @@ Everyone descends the same level each day. When you die, a grave is written on-c
 
 Players log in with an email. They never hold AVAX, install a wallet or see a signing prompt: every write is an ERC-4337 UserOperation sponsored through SmoothSend.
 
+**Play it:** https://ossuarydoom64.vercel.app · leaderboard: https://ossuarydoom64.vercel.app/leaderboard
+
 Built for **Team1 India Speedrun: Build Anything on Avalanche**. All code, levels, art and sound are original. No id Software assets are used.
 
 ## What's on-chain (Avalanche Fuji)
@@ -84,10 +86,11 @@ pnpm dev                                                    # http://localhost:3
 ### Tests
 
 ```bash
-pnpm --filter @ossuary/sim test          # 33 tests: determinism, replay, weapons, enemies, relics, level solvability
-pnpm --filter @ossuary/verifier test     # 7 tests: replay-derived tiles, relic checks, wrong-day logs
+pnpm --filter @ossuary/sim test          # 36 tests: determinism, replay, weapons, enemies, relics, level solvability, a bot that escapes
+pnpm --filter @ossuary/verifier test     # 9 tests: replay-derived tiles, relic checks, wrong-day logs, rules fingerprint
 pnpm --filter @ossuary/contracts test    # 7 tests: full loop, tampering, replayed signatures, guards
 pnpm --filter @ossuary/verifier e2e      # live: start -> die -> verify -> recordDeath on Fuji
+pnpm --filter @ossuary/verifier e2e:loot # live, two players: escape -> die carrying the relic -> other player loots it
 ```
 
 Useful scripts:

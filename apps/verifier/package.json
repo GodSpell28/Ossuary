@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "e2e": "tsx scripts/e2e-death.ts",
     "state": "tsx scripts/state.ts",
-    "events": "tsx scripts/events.ts"
+    "events": "tsx scripts/events.ts",
+    "e2e:loot": "tsx scripts/e2e-loot.ts",
+    "bot-search": "tsx scripts/bot-search.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",
